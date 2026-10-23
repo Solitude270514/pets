@@ -1,9 +1,9 @@
 """把 Gemini 生成的像素狗圖（洋紅 #FF00FF 背景）轉成調色盤字母格。
 
-在 sprites/ 資料夾下執行，會產生 <輸出名稱>.json（字母格）與 <輸出名稱>.png（放大檢查圖）：
-    cd sprites
-    python ../tools/extract.py ../art/doberman/sit.jpg sit
-    python ../tools/extract.py ../art/doberman/walk_sheet.jpg walk --rows2   # 兩排的分解圖
+在 sprites/<品種>/ 資料夾下執行，會產生 <輸出名稱>.json（字母格）與 <輸出名稱>.png（放大檢查圖）：
+    cd sprites/doberman
+    python ../../tools/extract.py ../../art/doberman/sit.jpg sit
+    python ../../tools/extract.py ../../art/doberman/walk_sheet.jpg walk --rows2   # 兩排的分解圖
 
 轉完記得跑 python tools/build_js.py 把資料合併進預覽頁與桌面程式。
 """

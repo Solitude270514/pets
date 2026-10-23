@@ -16,7 +16,6 @@ namespace DobyPet
         const int StageW = 24, StageH = 22;
 
         readonly ItemKind kind;
-        readonly SpriteBank bank;
         readonly Stage stage = new(StageW, StageH);
         readonly WriteableBitmap bmp;
         readonly Image image;
@@ -25,10 +24,9 @@ namespace DobyPet
         public readonly double X;
         public event Action<ItemWindow> Cleaned;
 
-        public ItemWindow(ItemKind kind, SpriteBank bank, double x, double scale, double ground)
+        public ItemWindow(ItemKind kind, double x, double scale, double ground)
         {
             this.kind = kind;
-            this.bank = bank;
             X = x;
 
             WindowStyle = WindowStyle.None;
@@ -68,17 +66,17 @@ namespace DobyPet
             stage.Clear();
             if (kind == ItemKind.Bowl)
             {
-                var b = bank.Fx("bowl", FxArt.Bowl);
+                var b = FxArt.Get("bowl", FxArt.Bowl);
                 stage.Blit(b, (StageW - b.W) / 2, StageH - b.H);
             }
             else if (kind == ItemKind.Slipper && cleanT < 0)
             {
-                var sl = bank.Fx("slipper", FxArt.Slipper);
+                var sl = FxArt.Get("slipper", FxArt.Slipper);
                 stage.Blit(sl, (StageW - sl.W) / 2, StageH - sl.H);
             }
             else if (cleanT < 0)
             {
-                var p = bank.Fx("poop", FxArt.Poop);
+                var p = FxArt.Get("poop", FxArt.Poop);
                 stage.Blit(p, (StageW - p.W) / 2, StageH - p.H);
                 // 兩隻小蒼蠅繞圈
                 double a = tms / 240, cx = StageW / 2.0, cy = StageH - 14;
@@ -89,7 +87,7 @@ namespace DobyPet
             else
             {
                 cleanT += dt;
-                var sp = bank.Fx("spark", FxArt.Spark);
+                var sp = FxArt.Get("spark", FxArt.Spark);
                 int f = (int)(cleanT / .11) % 2;
                 stage.Blit(sp, StageW / 2 - 6 + f, StageH - 12 - f);
                 stage.Blit(sp, StageW / 2 + f - 1, StageH - 8);

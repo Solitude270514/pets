@@ -16,11 +16,11 @@
     <Copyright>© 2026 Alex</Copyright>
     <RepositoryUrl>https://github.com/Solitude270514/pets</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Assets\sprites.json" LogicalName="DobyPet.sprites.json" />
+    <EmbeddedResource Include="Assets\breeds.json" LogicalName="DobyPet.breeds.json" />
   </ItemGroup>
 
   <ItemGroup>

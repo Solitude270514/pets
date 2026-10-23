@@ -1,23 +1,67 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 
 namespace DobyPet
 {
-    /// <summary>設定視窗：名字、毛色、大小、搗蛋、朋友配對碼、開機自動啟動。</summary>
+    /// <summary>設定視窗：我的狗狗（新增、移除、名字、品種、毛色）、大小、搗蛋、朋友配對碼、開機與更新。</summary>
     public sealed class SettingsWindow : Window
     {
+        readonly List<PetConfig> pets;
+        readonly ListBox list = new() { Height = 96 };
+        readonly TextBox name = new() { MaxLength = 12 };
+        readonly ComboBox breed = new() { DisplayMemberPath = "Name" };
+        readonly ComboBox coat = new();
+        readonly Button add = new() { Content = "＋ 新增", Margin = new Thickness(0, 0, 0, 6) };
+        readonly Button remove = new() { Content = "－ 移除" };
+        bool loading;
+
+        PetConfig Current => list.SelectedIndex >= 0 ? pets[list.SelectedIndex] : null;
+
+        static readonly string[] DefaultNames = { "小黑", "小白", "阿福", "麻糬", "豆豆", "旺財" };
+
         public SettingsWindow(Settings cfg)
         {
             Title = "小杜賓設定";
-            Width = 340;
+            Width = 380;
             SizeToContent = SizeToContent.Height;
             ResizeMode = ResizeMode.NoResize;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             Topmost = true;
 
-            var name = new TextBox { Text = cfg.Name, MaxLength = 12 };
-            var coat = new ComboBox { ItemsSource = Palettes.CoatNames, SelectedItem = cfg.Coat };
+            // 在副本上編輯，按儲存才寫回
+            pets = cfg.Pets.Select(p => new PetConfig { Id = p.Id, Name = p.Name, Breed = p.Breed, Coat = p.Coat }).ToList();
+            breed.ItemsSource = Breeds.All.Values.ToList();
+
+            list.SelectionChanged += (_, __) => LoadCurrent();
+            name.TextChanged += (_, __) => { if (!loading && Current != null) { Current.Name = name.Text.Trim(); RefreshList(); } };
+            breed.SelectionChanged += (_, __) =>
+            {
+                if (loading || Current == null || breed.SelectedItem is not Breed b) return;
+                Current.Breed = b.Id;
+                Current.Coat = b.DefaultCoat;
+                LoadCurrent();
+                RefreshList();
+            };
+            coat.SelectionChanged += (_, __) => { if (!loading && Current != null && coat.SelectedItem is string c) { Current.Coat = c; RefreshList(); } };
+            add.Click += (_, __) =>
+            {
+                var b = Breeds.Get(Breeds.Default);
+                string n = DefaultNames.FirstOrDefault(d => pets.All(p => p.Name != d)) ?? $"狗狗{pets.Count + 1}";
+                pets.Add(new PetConfig { Name = n, Breed = b.Id, Coat = b.CoatNames[pets.Count % b.CoatNames.Length] });
+                RefreshList();
+                list.SelectedIndex = pets.Count - 1;
+            };
+            remove.Click += (_, __) =>
+            {
+                if (Current == null || pets.Count <= 1) return;
+                int i = list.SelectedIndex;
+                pets.RemoveAt(i);
+                RefreshList();
+                list.SelectedIndex = System.Math.Min(i, pets.Count - 1);
+            };
+
             var sizes = new[] { (2, "小"), (3, "中"), (4, "大") };
             var size = new ComboBox
             {
@@ -50,8 +94,9 @@ namespace DobyPet
             var cancel = new Button { Content = "取消", IsCancel = true, Width = 80 };
             ok.Click += (_, __) =>
             {
-                cfg.Name = string.IsNullOrWhiteSpace(name.Text) ? "小黑" : name.Text.Trim();
-                cfg.Coat = (string)coat.SelectedItem ?? cfg.Coat;
+                for (int i = 0; i < pets.Count; i++)
+                    if (string.IsNullOrWhiteSpace(pets[i].Name)) pets[i].Name = DefaultNames[i % DefaultNames.Length];
+                cfg.Pets = pets;
                 cfg.PixelScale = sizes[size.SelectedIndex].Item1;
                 cfg.Mischief = mischief.IsChecked == true;
                 cfg.StealCursor = steal.IsChecked == true;
@@ -62,13 +107,38 @@ namespace DobyPet
             };
 
             var panel = new StackPanel { Margin = new Thickness(16) };
-            void Row(string label, FrameworkElement c)
+            void Label(string text, double top = 8) => panel.Children.Add(new TextBlock { Text = text, Margin = new Thickness(0, top, 0, 4) });
+            void Row(string label, FrameworkElement c) { Label(label); panel.Children.Add(c); }
+
+            Label($"我的狗狗（最多 {Settings.MaxPets} 隻）", 0);
+            var buttons1 = new StackPanel { Margin = new Thickness(8, 0, 0, 0), Width = 72 };
+            buttons1.Children.Add(add);
+            buttons1.Children.Add(remove);
+            var listRow = new DockPanel();
+            DockPanel.SetDock(buttons1, Dock.Right);
+            listRow.Children.Add(buttons1);
+            listRow.Children.Add(list);
+            panel.Children.Add(listRow);
+
+            var editor = new Grid { Margin = new Thickness(0, 4, 0, 0) };
+            editor.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
+            editor.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
+            editor.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
+            editor.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
+            editor.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
+            void Cell(int col, string label, FrameworkElement c)
             {
-                panel.Children.Add(new TextBlock { Text = label, Margin = new Thickness(0, 8, 0, 4) });
-                panel.Children.Add(c);
+                var sp = new StackPanel();
+                sp.Children.Add(new TextBlock { Text = label, Margin = new Thickness(0, 4, 0, 4) });
+                sp.Children.Add(c);
+                Grid.SetColumn(sp, col);
+                editor.Children.Add(sp);
             }
-            Row("名字", name);
-            Row("毛色", coat);
+            Cell(0, "名字", name);
+            Cell(2, "品種", breed);
+            Cell(4, "毛色", coat);
+            panel.Children.Add(editor);
+
             Row("大小", size);
             panel.Children.Add(mischief);
             panel.Children.Add(steal);
@@ -82,6 +152,34 @@ namespace DobyPet
             buttons.Children.Add(cancel);
             panel.Children.Add(buttons);
             Content = panel;
+
+            RefreshList();
+            list.SelectedIndex = 0;
+        }
+
+        void RefreshList()
+        {
+            int sel = list.SelectedIndex;
+            loading = true;
+            list.Items.Clear();
+            foreach (var p in pets)
+                list.Items.Add($"{(string.IsNullOrWhiteSpace(p.Name) ? "（未命名）" : p.Name)}　{Breeds.Get(p.Breed).Name}・{p.Coat}");
+            list.SelectedIndex = System.Math.Min(sel, pets.Count - 1);
+            loading = false;
+            add.IsEnabled = pets.Count < Settings.MaxPets;
+            remove.IsEnabled = pets.Count > 1;
+        }
+
+        void LoadCurrent()
+        {
+            if (loading || Current == null) return;
+            loading = true;
+            var b = Breeds.Get(Current.Breed);
+            name.Text = Current.Name;
+            breed.SelectedItem = b;
+            coat.ItemsSource = b.CoatNames;
+            coat.SelectedItem = Current.Coat;
+            loading = false;
         }
     }
 }

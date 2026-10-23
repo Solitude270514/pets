@@ -9,7 +9,7 @@ namespace DobyPet
     {
         readonly PetHost host;
         readonly Settings cfg;
-        readonly SpriteBank bank;
+        Dog target, pendingTarget;   // 右鍵點的那隻狗；null = 從系統匣開的選單，對全部的狗
         readonly WF.NotifyIcon icon;
         readonly WF.ContextMenuStrip menu = new();
         readonly WF.ToolStripMenuItem header, friend, visit, dnd, update;
@@ -19,33 +19,32 @@ namespace DobyPet
         bool installing;
         Icon currentIcon;
 
-        public Tray(PetHost host, Settings cfg, SpriteBank bank, bool justUpdated = false, bool updateNow = false)
+        public Tray(PetHost host, Settings cfg, bool justUpdated = false, bool updateNow = false)
         {
             this.host = host;
             this.cfg = cfg;
-            this.bank = bank;
 
             header = new WF.ToolStripMenuItem { Enabled = false };
             menu.Items.Add(header);
             menu.Items.Add(new WF.ToolStripSeparator());
-            menu.Items.Add("🦴 餵零食", null, (_, __) => host.Feed());
-            menu.Items.Add("👋 叫牠過來…", null, (_, __) => host.CallOver());
+            menu.Items.Add("🦴 餵零食", null, (_, __) => host.Feed(target));
+            menu.Items.Add("👋 叫牠過來…", null, (_, __) => host.CallOver(target));
 
             var tricks = new WF.ToolStripMenuItem("🎪 表演");
-            tricks.DropDownItems.Add("後空翻", null, (_, __) => host.Pet.DoBackflip());
-            tricks.DropDownItems.Add("放臭屁", null, (_, __) => host.Pet.DoFart());
-            tricks.DropDownItems.Add("坐下", null, (_, __) => host.Pet.DoSit());
-            tricks.DropDownItems.Add("睡覺", null, (_, __) => host.Pet.DoSleep());
-            tricks.DropDownItems.Add("伸懶腰", null, (_, __) => host.Pet.DoStretch());
+            tricks.DropDownItems.Add("後空翻", null, (_, __) => host.Each(target, p => p.DoBackflip()));
+            tricks.DropDownItems.Add("放臭屁", null, (_, __) => host.Each(target, p => p.DoFart()));
+            tricks.DropDownItems.Add("坐下", null, (_, __) => host.Each(target, p => p.DoSit()));
+            tricks.DropDownItems.Add("睡覺", null, (_, __) => host.Each(target, p => p.DoSleep()));
+            tricks.DropDownItems.Add("伸懶腰", null, (_, __) => host.Each(target, p => p.DoStretch()));
             tricks.DropDownItems.Add(new WF.ToolStripSeparator());
-            tricks.DropDownItems.Add("從螢幕邊偷看", null, (_, __) => host.Pet.DoPeek());
-            tricks.DropDownItems.Add("叼拖鞋", null, (_, __) => host.Pet.DoSlipper());
+            tricks.DropDownItems.Add("從螢幕邊偷看", null, (_, __) => host.Each(target, p => p.DoPeek()));
+            tricks.DropDownItems.Add("叼拖鞋", null, (_, __) => host.Each(target, p => p.DoSlipper()));
             menu.Items.Add(tricks);
 
             menu.Items.Add(new WF.ToolStripSeparator());
             friend = new WF.ToolStripMenuItem { Enabled = false };
             menu.Items.Add(friend);
-            visit = new WF.ToolStripMenuItem("🏠 去找朋友玩", null, (_, __) => host.StartVisit());
+            visit = new WF.ToolStripMenuItem("🏠 去找朋友玩", null, (_, __) => host.StartVisit(target));
             menu.Items.Add(visit);
 
             menu.Items.Add(new WF.ToolStripSeparator());
@@ -53,7 +52,7 @@ namespace DobyPet
             dnd.CheckedChanged += (_, __) =>
             {
                 cfg.DoNotDisturb = dnd.Checked;
-                host.Pet.DoNotDisturb = dnd.Checked;
+                host.SetDoNotDisturb(dnd.Checked);
                 cfg.Save();
             };
             menu.Items.Add(dnd);
@@ -62,11 +61,17 @@ namespace DobyPet
             menu.Items.Add(update);
             menu.Items.Add("🔄 檢查更新", null, async (_, __) => await CheckUpdate(manual: true));
             menu.Items.Add("結束", null, (_, __) => Exit());
-            menu.Opening += (_, __) => RefreshFriend();
+            menu.Opening += (_, __) =>
+            {
+                target = pendingTarget;   // 從系統匣圖示開的選單不會經過 ContextMenuRequested，就是 null
+                pendingTarget = null;
+                header.Text = target != null ? $"🐾 {target.Name}" : $"🐾 {cfg.PetNames}　v{Updater.CurrentText}";
+                RefreshFriend();
+            };
 
             icon = new WF.NotifyIcon { ContextMenuStrip = menu, Visible = true };
-            icon.DoubleClick += (_, __) => host.CallOver();
-            host.ContextMenuRequested += () => menu.Show(WF.Cursor.Position);
+            icon.DoubleClick += (_, __) => host.CallOver(null);
+            host.ContextMenuRequested += dog => { pendingTarget = dog; menu.Show(WF.Cursor.Position); };
             host.Notify += Balloon;
             host.StatusChanged += RefreshFriend;
             Refresh();
@@ -79,7 +84,7 @@ namespace DobyPet
             updateTimer.Start();
         }
 
-        void Balloon(string text) => icon.ShowBalloonTip(4000, cfg.Name, text, WF.ToolTipIcon.None);
+        void Balloon(string text) => icon.ShowBalloonTip(4000, cfg.PetNames, text, WF.ToolTipIcon.None);
 
         // ── 自動更新 ─────────────────────────────
 
@@ -159,8 +164,9 @@ namespace DobyPet
         /// <summary>名字或毛色改變後，更新選單標題與圖示。</summary>
         void Refresh()
         {
-            header.Text = $"🐾 {cfg.Name}　v{Updater.CurrentText}";
-            icon.Text = $"{cfg.Name}（小杜賓）";
+            header.Text = $"🐾 {cfg.PetNames}　v{Updater.CurrentText}";
+            var tip = $"{cfg.PetNames}（DobyPet）";
+            icon.Text = tip.Length > 63 ? tip[..63] : tip;   // NotifyIcon 的提示最多 63 字
             var old = currentIcon;
             currentIcon = MakeIcon();
             icon.Icon = currentIcon;
@@ -168,16 +174,17 @@ namespace DobyPet
             RefreshFriend();
         }
 
-        /// <summary>用站姿的頭部做 32×32 圖示。</summary>
+        /// <summary>用第一隻狗站姿的頭部做 32×32 圖示。</summary>
         Icon MakeIcon()
         {
+            var bank = host.Dogs[0].Bank;
             var img = bank.Stand(0);
-            const int crop = 22;   // 頭部大約在左上 22×22
+            int ox = bank.Breed.Icon[0], oy = bank.Breed.Icon[1], crop = bank.Breed.Icon[2];   // 頭部的位置與大小
             using var bmp = new Bitmap(32, 32);
             for (int y = 0; y < 32; y++)
                 for (int x = 0; x < 32; x++)
                 {
-                    int sx = x * crop / 32, sy = y * crop / 32 + 1;
+                    int sx = ox + x * crop / 32, sy = oy + y * crop / 32;
                     uint c = sy < img.H && sx < img.W ? img.Px[sy * img.W + sx] : 0;
                     bmp.SetPixel(x, y, Color.FromArgb(unchecked((int)c)));
                 }
@@ -189,7 +196,6 @@ namespace DobyPet
             string oldCode = cfg.FriendCode;
             var w = new SettingsWindow(cfg);
             if (w.ShowDialog() != true) return;
-            bank.Coat = cfg.Coat;
             cfg.Save();
             host.ApplySettings();
             if (FriendLink.NormalizeCode(oldCode) != FriendLink.NormalizeCode(cfg.FriendCode)) host.RestartLink();

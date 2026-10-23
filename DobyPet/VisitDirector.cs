@@ -1,17 +1,20 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace DobyPet
 {
     /// <summary>
-    /// 朋友的狗來作客時的導演：用一段腳本指揮兩隻狗一起玩。
+    /// 兩隻狗一起玩的導演：用一段腳本指揮兩隻狗。
     /// 腳本是 iterator，每一步 yield 一個「等到什麼時候才繼續」的條件。
-    /// 流程：客人從左邊走進來 → 碰鼻子打招呼 → 隨機玩幾輪 → 道別 → 客人從左邊離開。
+    /// - 朋友的狗來作客（fromOutside）：客人從左邊走進來 → 打招呼 → 隨機玩幾輪 → 道別 → 客人從左邊離開
+    /// - 家裡兩隻狗一起玩：走到彼此旁邊 → 打招呼 → 隨機玩幾輪 → 各自解散
     /// </summary>
     public sealed class VisitDirector
     {
         readonly PetController host, guest;
         readonly Func<double> clock;
+        readonly bool fromOutside;
         readonly Random rng = new();
         IEnumerator<Func<bool>> script;
         Func<bool> waiting;
@@ -19,13 +22,16 @@ namespace DobyPet
         public bool Finished { get; private set; }
         public event Action Done;
 
-        public VisitDirector(PetController host, PetController guest, Func<double> clock)
+        public VisitDirector(PetController host, PetController guest, Func<double> clock, bool fromOutside = true)
         {
             this.host = host;
             this.guest = guest;
             this.clock = clock;
+            this.fromOutside = fromOutside;
             script = Script().GetEnumerator();
         }
+
+        public bool Involves(PetController p) => p == host || p == guest;
 
         double S => host.Scale;
 
@@ -37,6 +43,7 @@ namespace DobyPet
             {
                 Finished = true;
                 if (host.Scripted) host.Release();
+                if (!fromOutside && guest.Scripted) guest.Release();
                 Done?.Invoke();
                 return;
             }
@@ -47,7 +54,7 @@ namespace DobyPet
         public void Abort()
         {
             if (Finished) return;
-            script = Leave().GetEnumerator();
+            script = fromOutside ? Leave().GetEnumerator() : Enumerable.Empty<Func<bool>>().GetEnumerator();
             waiting = null;
         }
 
@@ -57,18 +64,33 @@ namespace DobyPet
 
         IEnumerable<Func<bool>> Script()
         {
-            // 客人從左邊螢幕外走進來，主人狗忙完手邊的事再接待
-            guest.Scripted = true;
-            guest.X = guest.HiddenX(false);
-            guest.FacingRight = true;
-            yield return () => !host.Busy;
-            host.Scripted = true;
-            host.Act(PetState.Idle, 0);
+            if (fromOutside)
+            {
+                // 客人從左邊螢幕外走進來，主人狗忙完手邊的事再接待
+                guest.Scripted = true;
+                guest.X = guest.HiddenX(false);
+                guest.FacingRight = true;
+                yield return () => !host.Busy;
+                host.Scripted = true;
+                host.Act(PetState.Idle, 0);
 
-            double hx = Math.Max(host.X, host.MinX + 60 * S);
-            host.MoveTo(hx);
-            guest.MoveTo(hx - 42 * S, run: true, free: true);
-            yield return Both;
+                double hx = Math.Max(host.X, host.MinX + 60 * S);
+                host.MoveTo(hx);
+                guest.MoveTo(hx - 42 * S, run: true, free: true);
+                yield return Both;
+            }
+            else
+            {
+                // 家裡兩隻狗：等兩隻都有空，其中一隻跑去找另一隻
+                yield return () => !host.Busy && !guest.Busy;
+                host.Scripted = guest.Scripted = true;
+                host.Act(PetState.Idle, 0);
+                guest.Act(PetState.Idle, 0);
+                double hx = Math.Max(host.X, host.MinX + 60 * S);
+                host.MoveTo(hx);
+                guest.MoveTo(hx - 42 * S, run: true);
+                yield return Both;
+            }
 
             // 碰鼻子打招呼
             FaceEachOther();
@@ -93,6 +115,15 @@ namespace DobyPet
                     _ => Chase(),
                 };
                 foreach (var w in act) yield return w;
+            }
+
+            if (!fromOutside)
+            {
+                FaceEachOther();
+                host.Act(PetState.Happy, 1.2);
+                guest.Act(PetState.Happy, 1.2);
+                yield return Both;
+                yield break;   // 家裡的狗玩完就各自解散
             }
 
             // 客人偶爾會在你家便便

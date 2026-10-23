@@ -108,7 +108,7 @@ namespace DobyPet
                     break;
 
                 case PetState.Poop:
-                    if (!poopDropped && st > 1.2) { poopDropped = true; PoopDropped?.Invoke(RearX(24)); }
+                    if (!poopDropped && st > 1.2) { poopDropped = true; PoopDropped?.Invoke(RearX(B.PoopRear)); }
                     if (st >= dur) Enter(PetState.Proud, 3);
                     break;
 
@@ -250,11 +250,16 @@ namespace DobyPet
         double RearX(double px) => X + (FacingRight ? -1 : 1) * px * Scale;
 
         /// <summary>嘴巴的位置（DIP），用來叼拖鞋、咬游標。</summary>
-        public double MouthX => X + (FacingRight ? 1 : -1) * 15.5 * Scale;
-        public double MouthY(double ground) => ground - Alt - 35 * Scale;
+        Breed B => bank.Breed;
+
+        /// <summary>嘴巴相對站姿中心的水平位移（面向左時，像素）。</summary>
+        double MouthDx => B.MouthX - B.StandW / 2.0;
+
+        public double MouthX => X + (FacingRight ? -1 : 1) * MouthDx * Scale;
+        public double MouthY(double ground) => ground - Alt - (B.StandH - B.MouthY) * Scale;
 
         /// <summary>藏在螢幕外的位置。</summary>
-        public double HiddenX(bool right) => right ? EdgeR + 30 * Scale : EdgeL - 30 * Scale;
+        public double HiddenX(bool right) => right ? EdgeR + 34 * Scale : EdgeL - 34 * Scale;
 
         void WalkTo(double x, Action arrive = null, bool run = false, bool free = false)
         {
@@ -275,7 +280,8 @@ namespace DobyPet
             {
                 FacingRight = !right;   // 轉身面向螢幕內
                 peekFrom = X;
-                peekTo = right ? EdgeR + 3.5 * Scale : EdgeL - 3.5 * Scale;   // 只露出頭
+                double show = B.StandW / 2.0 - B.Peek;   // 只露出頭
+                peekTo = right ? EdgeR + show * Scale : EdgeL - show * Scale;
                 Enter(PetState.Peek, 4 + rng.NextDouble() * 4);
             }, free: true);
         }
@@ -308,7 +314,7 @@ namespace DobyPet
         {
             if (Busy || Scripted || carrying || State is PetState.Sleep or PetState.Eat) return false;
             bool left = cursorX < X;
-            WalkTo(cursorX + (left ? 15.5 : -15.5) * Scale, () =>
+            WalkTo(cursorX + (left ? -MouthDx : MouthDx) * Scale, () =>
             {
                 FacingRight = !left;
                 stealDir = left ? 1 : -1;   // 咬到之後往回跑
@@ -355,7 +361,7 @@ namespace DobyPet
             if (Busy || dnd || Scripted) return false;
             if (carrying) DropSlipper();
             bool bowlLeft = bowlX < X;
-            double off = 21 * Scale;   // 吃飯圖裡狗碗在嘴巴前方約 21 格
+            double off = (bank.Info("eat").Rows[0].Length / 2.0 - B.BowlX) * Scale;   // 吃飯圖裡狗碗離身體中心的距離
             WalkTo(bowlLeft ? bowlX + off : bowlX - off, () =>
             {
                 FacingRight = !bowlLeft;
@@ -467,7 +473,7 @@ namespace DobyPet
         /// <summary>依照鏡像畫特效：xRel 是以面向左為準的位置，面向右時自動對稱。</summary>
         void FxAt(string key, string[] rows, double xRel, double y)
         {
-            var img = bank.Fx(key, rows);
+            var img = FxArt.Get(key, rows);
             s.Blit(img, FacingRight ? gx - xRel - img.W : gx + xRel, y);
         }
 
@@ -493,7 +499,7 @@ namespace DobyPet
         {
             double jx = shaking ? ((int)(tms / 90) % 2 == 0 ? -3 : 2) : 0;
             double jy = shaking ? (int)(tms / 90) % 2 : 0;
-            FxAt("slipper", FxArt.Slipper, -15.5 - 5 + jx, gy - 37 + jy + dy);
+            FxAt("slipper", FxArt.Slipper, MouthDx - 5 + jx, gy - (B.StandH - B.MouthY) - 2 + jy + dy);
         }
 
         double lastT;
@@ -552,7 +558,7 @@ namespace DobyPet
                 {
                     var img = bank.Pose("eat");
                     Dog(img, sy: (int)(tms / 260) % 2 == 1 ? 1 : .985);
-                    double c = tms % 900 / 900, bx = -img.W / 2.0 + 10;   // 飼料屑從碗邊噴出來
+                    double c = tms % 900 / 900, bx = -img.W / 2.0 + B.BowlX + 2;   // 飼料屑從碗邊噴出來
                     if (c < .6)
                     {
                         uint o = Palettes.Fx['o'];
@@ -612,9 +618,10 @@ namespace DobyPet
                     if (k >= 900 && k < 3200)
                     {
                         double p = (k - 900) / 2300;
-                        FxAt("puffS", FxArt.PuffS, 17 + p * 4, gy - 26 - p * 10);
-                        if (p > .12) FxAt("puffL", FxArt.PuffL, 21 + p * 6, gy - 34 - p * 12);
-                        if (p > .3) FxAt("puffS", FxArt.PuffS, 29 + p * 3, gy - 28 - p * 14);
+                        double rx = B.RearX - B.StandW / 2.0, ry = gy - (B.StandH - B.RearY);   // 屁股的位置
+                        FxAt("puffS", FxArt.PuffS, rx + p * 4, ry - p * 10);
+                        if (p > .12) FxAt("puffL", FxArt.PuffL, rx + 4 + p * 6, ry - 8 - p * 12);
+                        if (p > .3) FxAt("puffS", FxArt.PuffS, rx + 12 + p * 3, ry - 2 - p * 14);
                     }
                     break;
                 }

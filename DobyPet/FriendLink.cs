@@ -16,6 +16,7 @@ namespace DobyPet
         public string From { get; set; }    // 發送者的 InstanceId
         public string Name { get; set; }
         public string Coat { get; set; }
+        public string Breed { get; set; }   // 品種代號；舊版沒有這個欄位，收到 null 就當杜賓
         public string Id { get; set; }      // 拜訪編號，用來對應請求與回覆
         public bool Away { get; set; }      // hello 用：主人現在不在電腦前
     }

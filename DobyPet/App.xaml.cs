@@ -43,21 +43,21 @@ namespace DobyPet
             DispatcherUnhandledException += (_, ex) => { Log(ex.Exception); ex.Handled = true; };
 
             var cfg = Settings.Load();
-            var bank = new SpriteBank { Coat = cfg.Coat };
-            var host = new PetHost(cfg, bank, e.Args.Contains("--demo"), e.Args.Contains("--present"));
-            tray = new Tray(host, cfg, bank, justUpdated: updated, updateNow: e.Args.Contains("--update-now"));
+            var host = new PetHost(cfg, e.Args.Contains("--demo"), e.Args.Contains("--present"));
+            tray = new Tray(host, cfg, justUpdated: updated, updateNow: e.Args.Contains("--update-now"));
 
-            if (e.Args.Contains("--call")) Dispatcher.BeginInvoke(host.CallOver);
+            if (e.Args.Contains("--call")) Dispatcher.BeginInvoke(() => host.CallOver(null));
             int ti = Array.IndexOf(e.Args, "--trick");
             if (ti >= 0 && ti + 1 < e.Args.Length)
             {
-                Action trick = e.Args[ti + 1] switch
+                Action<PetController> act = e.Args[ti + 1] switch
                 {
-                    "peek" => host.Pet.DoPeek,
-                    "slipper" => host.Pet.DoSlipper,
-                    "fart" => host.Pet.DoFart,
-                    _ => host.Pet.DoBackflip,
+                    "peek" => p => p.DoPeek(),
+                    "slipper" => p => p.DoSlipper(),
+                    "fart" => p => p.DoFart(),
+                    _ => p => p.DoBackflip(),
                 };
+                Action trick = () => host.Each(null, act);
                 var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
                 t.Tick += (_, __) => trick();
                 t.Start();
@@ -66,7 +66,7 @@ namespace DobyPet
             if (e.Args.Contains("--visit"))
             {
                 var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
-                t.Tick += (_, __) => { if (host.CanVisit) { t.Stop(); host.StartVisit(); } };
+                t.Tick += (_, __) => { if (host.CanVisit) { t.Stop(); host.StartVisit(null); } };
                 t.Start();
             }
         }
