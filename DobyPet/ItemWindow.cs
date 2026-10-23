@@ -8,9 +8,9 @@ using System.Windows.Media.Imaging;
 
 namespace DobyPet
 {
-    public enum ItemKind { Bowl, Poop }
+    public enum ItemKind { Bowl, Poop, Slipper }
 
-    /// <summary>放在工作列上的小道具：狗碗、便便（點一下就清掉）。</summary>
+    /// <summary>放在工作列上的小道具：狗碗、便便、拖鞋（後兩者點一下就收掉）。</summary>
     public sealed class ItemWindow : Window
     {
         const int StageW = 24, StageH = 22;
@@ -44,9 +44,10 @@ namespace DobyPet
             RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.NearestNeighbor);
             Content = image;
             if (kind == ItemKind.Poop) { Cursor = Cursors.Hand; ToolTip = "點一下清掉"; }
+            if (kind == ItemKind.Slipper) { Cursor = Cursors.Hand; ToolTip = "點一下收好"; }
 
             SourceInitialized += (_, __) => Native.MakeToolWindow(new WindowInteropHelper(this).Handle);
-            MouseLeftButtonUp += (_, __) => { if (this.kind == ItemKind.Poop && cleanT < 0) cleanT = 0; };
+            MouseLeftButtonUp += (_, __) => { if (this.kind != ItemKind.Bowl && cleanT < 0) cleanT = 0; };
 
             ApplyScale(scale, ground);
             Tick(0, 0);
@@ -69,6 +70,11 @@ namespace DobyPet
             {
                 var b = bank.Fx("bowl", FxArt.Bowl);
                 stage.Blit(b, (StageW - b.W) / 2, StageH - b.H);
+            }
+            else if (kind == ItemKind.Slipper && cleanT < 0)
+            {
+                var sl = bank.Fx("slipper", FxArt.Slipper);
+                stage.Blit(sl, (StageW - sl.W) / 2, StageH - sl.H);
             }
             else if (cleanT < 0)
             {

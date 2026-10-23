@@ -16,11 +16,15 @@
     <Copyright>© 2026 Alex</Copyright>
     <RepositoryUrl>https://github.com/Solitude270514/pets</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="Assets\sprites.json" LogicalName="DobyPet.sprites.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MQTTnet" Version="4.3.7.1207" />
   </ItemGroup>
 
 </Project>

@@ -2,11 +2,16 @@ using System;
 
 namespace DobyPet
 {
-    public enum PetState { Idle, Walk, Sit, Sleep, Stretch, Eat, Poop, Proud, Happy, Petted, Backflip, Fart, Dragged, Falling, Land }
+    public enum PetState
+    {
+        Idle, Walk, Sit, Sleep, Stretch, Eat, Poop, Proud, Happy, Petted, Backflip, Fart, Dragged, Falling, Land,
+        Peek, PeekHide, Offscreen, Shake, Steal, Faint,
+    }
 
     /// <summary>
     /// 狗狗的大腦：決定現在做什麼、位置在哪，並把當下的畫面畫到 Stage 上。
     /// 不碰任何視窗，座標單位是 DIP（X = 腳底中心的螢幕座標，Alt = 離地高度）。
+    /// Scripted = true 時不自己決定下一步，由 VisitDirector 指揮（兩隻狗一起玩的時候）。
     /// </summary>
     public sealed class PetController
     {
@@ -21,7 +26,8 @@ namespace DobyPet
         double vAlt;
         public bool FacingRight;        // 圖本身面向左，面向右時翻轉
         public double Scale = 2;        // 一格像素 = 幾個 DIP
-        public double MinX, MaxX;
+        public double MinX, MaxX;       // 可以散步的範圍
+        public double EdgeL, EdgeR;     // 螢幕左右邊界（探頭、出門用）
 
         double targetX, speed;
         bool running;
@@ -35,8 +41,18 @@ namespace DobyPet
         double fartBoost;               // 吃完飯後放屁機率提高，隨時間遞減
         int demoStep;
 
-        public event Action<double> PoopDropped;   // 參數：便便的 X
+        // 搗蛋
+        public bool Mischief = true;
+        bool carrying;                  // 嘴裡叼著拖鞋
+        double peekFrom, peekTo, stealDir;
+        Action afterOffscreen;
+
+        public bool Scripted;
+
+        public event Action<double> PoopDropped;     // 參數：便便的 X
+        public event Action<double> SlipperDropped;  // 參數：拖鞋的 X
         public Func<bool> CanPoop = () => true;
+        public Func<bool> CanFetchSlipper = () => true;
 
         public PetController(SpriteBank bank, bool demo = false)
         {
@@ -45,10 +61,18 @@ namespace DobyPet
             Enter(PetState.Idle, 2);
         }
 
+        public SpriteBank Bank => bank;
+
         void Enter(PetState s, double d = 0) { State = s; st = 0; dur = d; }
 
         /// <summary>正在做不能被打斷的事。</summary>
-        public bool Busy => State is PetState.Eat or PetState.Poop or PetState.Dragged or PetState.Falling or PetState.Backflip;
+        public bool Busy => State is PetState.Eat or PetState.Poop or PetState.Dragged or PetState.Falling
+            or PetState.Backflip or PetState.Steal or PetState.Offscreen or PetState.PeekHide or PetState.Peek;
+
+        /// <summary>被指揮時：這一步做完了，在原地待命。</summary>
+        public bool Settled => State == PetState.Idle && dur == 0;
+
+        public bool IsOffscreen => State == PetState.Offscreen;
 
         // ── 每一格更新 ─────────────────────────────
 
@@ -88,6 +112,37 @@ namespace DobyPet
                     if (st >= dur) Enter(PetState.Proud, 3);
                     break;
 
+                case PetState.Peek:   // 從螢幕邊緣滑進來，只露出頭
+                    X = peekFrom + (peekTo - peekFrom) * Math.Min(1, st / .5);
+                    if (dur > 0 && st >= dur) End();
+                    break;
+
+                case PetState.PeekHide:   // 被發現了，縮回去
+                    X = peekTo + (peekFrom - peekTo) * Math.Min(1, st / .3);
+                    if (st >= .3)
+                    {
+                        afterOffscreen = () => WalkTo(RandomX(), () => Enter(PetState.Happy, 1.2));
+                        Enter(PetState.Offscreen, 1.2);
+                    }
+                    break;
+
+                case PetState.Offscreen:
+                    if (dur > 0 && st >= dur)
+                    {
+                        var after = afterOffscreen; afterOffscreen = null;
+                        if (after != null) after(); else WalkTo(RandomX());
+                    }
+                    break;
+
+                case PetState.Steal:   // 咬住游標往回跑
+                    if (st > .35)
+                    {
+                        FacingRight = stealDir > 0;
+                        X = Clamp(X + stealDir * 70 * Scale * dt);
+                    }
+                    if (st >= dur) Enter(PetState.Happy, 1.2);
+                    break;
+
                 default:
                     if (dur > 0 && st >= dur) End();
                     break;
@@ -96,6 +151,7 @@ namespace DobyPet
 
         void End()
         {
+            if (Scripted) { Enter(PetState.Idle, 0); return; }
             switch (State)
             {
                 case PetState.Sleep:
@@ -113,6 +169,12 @@ namespace DobyPet
                     flipAfterHappy = false;
                     Enter(PetState.Backflip, 2.8);
                     break;
+                case PetState.Peek:
+                    WalkTo(RandomX());   // 看夠了，大搖大擺走進來
+                    break;
+                case PetState.Shake:
+                    WalkTo(RandomX(), DropSlipper);
+                    break;
                 default:
                     Next();
                     break;
@@ -122,6 +184,7 @@ namespace DobyPet
         /// <summary>決定下一件事。</summary>
         void Next()
         {
+            if (Scripted) { Enter(PetState.Idle, 0); return; }
             if (dnd) { Enter(PetState.Sleep, 60); return; }
             if (OwnerAway)
             {
@@ -139,8 +202,11 @@ namespace DobyPet
 
             double r = rng.NextDouble();
             double pFart = 0.004 + 0.04 * fartBoost, pFlip = 0.006;
+            double pPeek = Mischief ? 0.02 : 0, pSlipper = Mischief && CanFetchSlipper() ? 0.008 : 0;
             if ((r -= pFart) < 0) { Enter(PetState.Fart, 3.6); return; }
             if ((r -= pFlip) < 0) { Enter(PetState.Backflip, 2.8); return; }
+            if ((r -= pPeek) < 0) { StartPeek(); return; }
+            if ((r -= pSlipper) < 0) { StartSlipper(); return; }
             if ((r -= 0.34) < 0) { WalkTo(RandomX()); return; }
             if ((r -= 0.22) < 0) { Enter(PetState.Idle, 3 + rng.NextDouble() * 4); return; }
             if ((r -= 0.18) < 0) { Enter(PetState.Sit, 6 + rng.NextDouble() * 12); return; }
@@ -152,20 +218,22 @@ namespace DobyPet
         /// <summary>示範模式：依序展示每個動作（開發測試用）。</summary>
         void DemoNext()
         {
-            switch (demoStep++ % 8)
+            switch (demoStep++ % 10)
             {
                 case 0: WalkTo(RandomX()); break;
-                case 1: Enter(PetState.Sit, 3); break;
+                case 1: StartPeek(); break;
                 case 2: Enter(PetState.Fart, 3.6); break;
-                case 3: Enter(PetState.Backflip, 2.8); break;
-                case 4: Enter(PetState.Sleep, 3); break;
-                case 5: Enter(PetState.Petted, 2); break;
-                case 6: Enter(PetState.Happy, 2); break;
+                case 3: StartSlipper(); break;
+                case 4: Enter(PetState.Backflip, 2.8); break;
+                case 5: Enter(PetState.Sleep, 3); break;
+                case 6: Enter(PetState.Petted, 2); break;
+                case 7: Enter(PetState.Sit, 3); break;
+                case 8: Enter(PetState.Happy, 2); break;
                 default: Enter(PetState.Idle, 2); break;
             }
         }
 
-        double RandomX()
+        public double RandomX()
         {
             for (int i = 0; i < 8; i++)
             {
@@ -178,22 +246,89 @@ namespace DobyPet
 
         double Clamp(double x) => Math.Max(MinX, Math.Min(MaxX, x));
 
-        /// <summary>屁股那一側的 X（便便、臭屁出現的位置）。</summary>
+        /// <summary>屁股那一側的 X（便便出現的位置）。</summary>
         double RearX(double px) => X + (FacingRight ? -1 : 1) * px * Scale;
 
-        void WalkTo(double x, Action arrive = null, bool run = false)
+        /// <summary>嘴巴的位置（DIP），用來叼拖鞋、咬游標。</summary>
+        public double MouthX => X + (FacingRight ? 1 : -1) * 15.5 * Scale;
+        public double MouthY(double ground) => ground - Alt - 35 * Scale;
+
+        /// <summary>藏在螢幕外的位置。</summary>
+        public double HiddenX(bool right) => right ? EdgeR + 30 * Scale : EdgeL - 30 * Scale;
+
+        void WalkTo(double x, Action arrive = null, bool run = false, bool free = false)
         {
-            targetX = Clamp(x);
+            targetX = free ? x : Clamp(x);
             running = run;
             speed = (run ? 75 : 24) * Scale;
             onArrive = arrive;
             Enter(PetState.Walk);
         }
 
+        // ── 搗蛋 ─────────────────────────────────
+
+        /// <summary>走出螢幕，再從邊緣探頭偷看。</summary>
+        void StartPeek()
+        {
+            bool right = rng.Next(2) == 0;
+            WalkTo(HiddenX(right), () =>
+            {
+                FacingRight = !right;   // 轉身面向螢幕內
+                peekFrom = X;
+                peekTo = right ? EdgeR + 3.5 * Scale : EdgeL - 3.5 * Scale;   // 只露出頭
+                Enter(PetState.Peek, 4 + rng.NextDouble() * 4);
+            }, free: true);
+        }
+
+        /// <summary>跑出螢幕，叼一隻拖鞋回來甩，甩夠了丟在工作列上。</summary>
+        void StartSlipper()
+        {
+            bool right = X > (EdgeL + EdgeR) / 2;
+            WalkTo(HiddenX(right), () =>
+            {
+                afterOffscreen = () =>
+                {
+                    carrying = true;
+                    WalkTo(RandomX(), () => Enter(PetState.Shake, 2.5), run: true);
+                };
+                Enter(PetState.Offscreen, 1.5);
+            }, run: true, free: true);
+        }
+
+        void DropSlipper()
+        {
+            if (!carrying) return;
+            carrying = false;
+            SlipperDropped?.Invoke(MouthX);
+            if (!Busy) Enter(PetState.Proud, 2.5);
+        }
+
+        /// <summary>游標在附近而且主人沒在動滑鼠：跑過去咬住游標拖著跑。</summary>
+        public bool TryStealCursor(double cursorX)
+        {
+            if (Busy || Scripted || carrying || State is PetState.Sleep or PetState.Eat) return false;
+            bool left = cursorX < X;
+            WalkTo(cursorX + (left ? 15.5 : -15.5) * Scale, () =>
+            {
+                FacingRight = !left;
+                stealDir = left ? 1 : -1;   // 咬到之後往回跑
+                Enter(PetState.Steal, 1.6);
+            }, run: true);
+            return true;
+        }
+
+        /// <summary>咬住游標中（PetHost 會把游標移到嘴巴的位置）。</summary>
+        public bool HoldingCursor => State == PetState.Steal && st > .35;
+
+        /// <summary>主人把游標搶回去了。</summary>
+        public void ReleaseCursor() { if (State == PetState.Steal) Enter(PetState.Happy, 1.2); }
+
         // ── 外部指令 ─────────────────────────────
 
         public void Pet()
         {
+            if (State == PetState.Peek) { Enter(PetState.PeekHide, .3); return; }   // 被抓到偷看
+            if (carrying) DropSlipper();
             if (Busy) return;
             if (State == PetState.Sleep) { Enter(PetState.Stretch, 1.8); return; }
             Enter(PetState.Petted, 1.8);
@@ -205,6 +340,8 @@ namespace DobyPet
         public void DoSit() { if (!Busy) Enter(PetState.Sit, 15); }
         public void DoSleep() { if (!Busy) Enter(PetState.Sleep, 60); }
         public void DoStretch() { if (!Busy) Enter(PetState.Stretch, 1.8); }
+        public void DoPeek() { if (!Busy && !Scripted) StartPeek(); }
+        public void DoSlipper() { if (!Busy && !Scripted && !carrying && CanFetchSlipper()) StartSlipper(); }
 
         public void ComeTo(double x)
         {
@@ -215,7 +352,8 @@ namespace DobyPet
         /// <summary>跑去碗旁邊吃飯。忙碌中回傳 false，呼叫端稍後再試。</summary>
         public bool GoEat(double bowlX, Action arrived)
         {
-            if (Busy || dnd) return false;
+            if (Busy || dnd || Scripted) return false;
+            if (carrying) DropSlipper();
             bool bowlLeft = bowlX < X;
             double off = 21 * Scale;   // 吃飯圖裡狗碗在嘴巴前方約 21 格
             WalkTo(bowlLeft ? bowlX + off : bowlX - off, () =>
@@ -234,12 +372,17 @@ namespace DobyPet
             {
                 if (dnd == value) return;
                 dnd = value;
-                if (Busy) return;
+                if (Busy || Scripted) return;
                 if (dnd) Enter(PetState.Sleep, 60); else Enter(PetState.Stretch, 1.8);
             }
         }
 
-        public void BeginDrag() { onArrive = null; Enter(PetState.Dragged); }
+        public void BeginDrag()
+        {
+            if (carrying) DropSlipper();
+            onArrive = null;
+            Enter(PetState.Dragged);
+        }
 
         public void DragTo(double x, double alt) { X = Clamp(x); Alt = Math.Max(0, alt); }
 
@@ -254,6 +397,7 @@ namespace DobyPet
         {
             if (away == OwnerAway) return;
             OwnerAway = away;
+            if (Scripted || State == PetState.Offscreen) return;
             if (away)
             {
                 awayTime = 0;
@@ -272,8 +416,46 @@ namespace DobyPet
         }
 
         /// <summary>全螢幕程式開啟時：不顯示，讓牠安靜睡覺。</summary>
-        public void ForceSleep() { if (State is not (PetState.Dragged or PetState.Falling)) Enter(PetState.Sleep, 0); }
+        public void ForceSleep() { if (State is not (PetState.Dragged or PetState.Falling or PetState.Offscreen)) Enter(PetState.Sleep, 0); }
         public void WakeUp() { if (State == PetState.Sleep) Enter(PetState.Stretch, 1.8); }
+
+        // ── 出門拜訪（第三階段） ─────────────────────
+
+        /// <summary>走到螢幕邊緣嗅一嗅。</summary>
+        public void WalkToEdge(bool right, Action arrived)
+        {
+            if (carrying) DropSlipper();
+            WalkTo(right ? MaxX : MinX, () => { FacingRight = right; arrived(); Enter(PetState.Idle, 0); });
+        }
+
+        /// <summary>走出螢幕，留在畫面外（去朋友家）。</summary>
+        public void WalkOut(bool right, Action gone = null)
+        {
+            WalkTo(HiddenX(right), () => { Enter(PetState.Offscreen, 0); gone?.Invoke(); }, free: true);
+        }
+
+        /// <summary>從螢幕外走進來。</summary>
+        public void ComeIn(bool fromRight, Action arrived = null)
+        {
+            X = HiddenX(fromRight);
+            Alt = 0;
+            FacingRight = !fromRight;
+            double target = fromRight ? MaxX - rng.NextDouble() * 300 : MinX + rng.NextDouble() * 300;
+            WalkTo(target, arrived ?? (() => Enter(PetState.Happy, 1.6)));
+        }
+
+        /// <summary>嗅完邊緣，朋友不在家：失望地坐下。</summary>
+        public void Disappointed() { if (State == PetState.Idle) Enter(PetState.Sit, 5); }
+
+        /// <summary>給 VisitDirector 用：移動、轉向、做某個動作。</summary>
+        public void MoveTo(double x, bool run = false, bool free = false) => WalkTo(x, null, run, free);
+        public void Face(bool right) => FacingRight = right;
+        public void Act(PetState s, double d)
+        {
+            if (s == PetState.Poop) poopDropped = false;
+            Enter(s, d);
+        }
+        public void Release() { Scripted = false; Enter(PetState.Idle, 2); }
 
         // ── 畫面 ────────────────────────────────
 
@@ -298,28 +480,44 @@ namespace DobyPet
         void Dog(PixImage img, double dx = 0, double dy = 0, double sx = 1, double sy = 1, double rot = 0, double? ax = null) =>
             s.Draw(img, gx + (FacingRight ? -dx : dx), gy + dy, FacingRight, sx, sy, FacingRight ? -rot : rot, ax);
 
+        void WalkFrame(double ms)
+        {
+            int f = (int)(lastT / ms) % 4;
+            var stand = bank.Info("stand");
+            double ax = bank.Info("walk", f).Ax + (stand.Rows[0].Length / 2.0 - stand.Ax);
+            Dog(bank.Pose("walk", f), ax: ax);
+        }
+
+        /// <summary>嘴裡的拖鞋（甩的時候會晃）。</summary>
+        void Slipper(double tms, bool shaking, double dy = 0)
+        {
+            double jx = shaking ? ((int)(tms / 90) % 2 == 0 ? -3 : 2) : 0;
+            double jy = shaking ? (int)(tms / 90) % 2 : 0;
+            FxAt("slipper", FxArt.Slipper, -15.5 - 5 + jx, gy - 37 + jy + dy);
+        }
+
+        double lastT;
+
         public void Render(Stage stage, double tms)
         {
-            s = stage; gx = s.W / 2; gy = s.H;
+            s = stage; gx = s.W / 2; gy = s.H; lastT = tms;
             double k = st * 1000;   // 目前狀態經過的毫秒
 
             switch (State)
             {
                 case PetState.Idle:
                     Dog(bank.Stand(WagAt(tms, 180), tms % 3400 < 150));
+                    if (carrying) Slipper(tms, false);
                     break;
 
                 case PetState.Walk:
-                case PetState.Dragged:
-                {
-                    // 被拎起來時四腳亂踢：用走路圖快速播放
-                    double ms = State == PetState.Dragged ? 70 : running ? 80 : 150;
-                    int f = (int)(tms / ms) % 4;
-                    var stand = bank.Info("stand");
-                    double ax = bank.Info("walk", f).Ax + (stand.Rows[0].Length / 2.0 - stand.Ax);
-                    Dog(bank.Pose("walk", f), ax: ax);
+                    WalkFrame(running ? 80 : 150);
+                    if (carrying) Slipper(tms, false, (int)(tms / (running ? 80 : 150)) % 2);
                     break;
-                }
+
+                case PetState.Dragged:   // 被拎起來時四腳亂踢：用走路圖快速播放
+                    WalkFrame(70);
+                    break;
 
                 case PetState.Sit:
                 case PetState.Proud:
@@ -334,6 +532,15 @@ namespace DobyPet
                     double z = tms % 2600 / 2600;
                     FxAt("zz", FxArt.Zz, 12 + z * 6, gy - 40 - z * 14);
                     if (z > .5) FxAt("zz", FxArt.Zz, 10 + (z - .5) * 6, gy - 40 - (z - .5) * 14);
+                    break;
+                }
+
+                case PetState.Faint:   // 被臭暈：趴著，頭上轉星星
+                {
+                    Dog(bank.Pose("sleep"), sy: .96);
+                    double a = tms / 180;
+                    for (int i = 0; i < 3; i++)
+                        FxAt("spark", FxArt.Spark, -20 + Math.Cos(a + i * 2.1) * 9, gy - 44 + Math.Sin(a + i * 2.1) * 3);
                     break;
                 }
 
@@ -411,6 +618,24 @@ namespace DobyPet
                     }
                     break;
                 }
+
+                case PetState.Shake:   // 叼著拖鞋猛甩頭
+                    Dog(bank.Stand(WagAt(tms, 70)), dx: (int)(tms / 90) % 2 == 0 ? -1 : 1);
+                    Slipper(tms, true);
+                    break;
+
+                case PetState.Peek:
+                case PetState.PeekHide:
+                    Dog(bank.Stand(0, blink: tms % 2600 < 160));
+                    break;
+
+                case PetState.Steal:
+                    if (k < 350) Dog(bank.Stand(WagAt(tms, 70)), dy: -Math.Sin(k / 350 * Math.PI) * 8);   // 跳起來咬
+                    else WalkFrame(70);
+                    break;
+
+                case PetState.Offscreen:
+                    break;
 
                 case PetState.Falling:
                     Dog(bank.Stand(0, half: true));
