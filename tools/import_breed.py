@@ -85,11 +85,11 @@ def main():
     for n, fs in poses.items():
         json.dump(fs, open(os.path.join(out, n + '.json'), 'w'))
 
-    # 4. meta.json（已存在就只更新調色盤裡的「原色」）
+    # 4. meta.json（已存在就保留標好的位置與毛色；調色盤變了要再跑 make_coats.py）
     meta_path = os.path.join(out, 'meta.json')
     if os.path.exists(meta_path):
         meta = json.load(open(meta_path, encoding='utf-8'))
-        meta.setdefault('coats', {})['原色'] = palette
+        print('meta.json 已存在，保留原本的設定；調色盤已更新，記得執行 python tools/make_coats.py ' + breed)
     else:
         stand = poses.get('stand', [{'rows': ['.']}])[0]['rows']
         w, h = len(stand[0]), len(stand)

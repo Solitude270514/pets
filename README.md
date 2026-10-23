@@ -24,7 +24,7 @@
 | 陪伴 | 你離開 3 分鐘，牠坐著等你，等久了就睡著；你回來，牠衝到滑鼠位置開心亂跳 |
 | 貼心 | 看影片、簡報等全螢幕畫面時自動躲起來睡覺，不擋畫面 |
 | 多隻狗 | 最多同時養 4 隻，各自取名、選品種與毛色；家裡兩隻以上時，每隔幾分鐘會湊在一起玩 |
-| 品種 | 杜賓（黑棕、紅棕、藍棕、淺黃四種毛色）、柴犬、柯基、黃金獵犬、哈士奇、短毛臘腸；三種大小 |
+| 品種 | 杜賓（黑棕、紅棕、藍棕、淺黃）、柴犬（赤柴、黑柴、芝麻柴、白柴）、柯基（紅白、黃白、三色、深紅）、黃金獵犬（金黃、奶油、深紅金）、哈士奇（灰白、黑白、紅白、銀白）、短毛臘腸（紅棕、黑色、巧克力、奶油）；三種大小 |
 
 ### 操作方式
 
@@ -144,7 +144,8 @@ art/<品種>/*.jpg ──tools/extract.py──▶ sprites/<品種>/*.json ─�
 1. 照 [art/PROMPTS.md](art/PROMPTS.md) 用 Gemini 生成「動作表」`sheet.jpg`（6 個姿勢），背景純洋紅色 `#FF00FF`，放進 `art/<品種>/`。執行 `python tools/crop_ref.py <品種>` 裁出站姿參考圖，再用它生成「走路圖」`walk_sheet.jpg`（4 格）。面向右邊的姿勢記在 `art/<品種>/import.json` 的 `flip`。
 2. 執行 `python tools/import_breed.py <品種>`：自動抓 12 色調色盤、依閱讀順序切出 6 個姿勢與 4 格走路、統一大小、建立 `meta.json`，產生 `sprites/<品種>/overview.png` 總覽圖，最後執行 `build_js.py`。
 3. 看總覽圖確認，再補上 `meta.json` 的眨眼、搖尾巴、嘴巴等位置（不補也能用，只是不會眨眼、搖尾巴）。
-4. 打開 `preview.html`（需要本機伺服器）或 `preview_standalone.html` 看動畫效果。
+4. 在 `tools/make_coats.py` 指定哪些顏色代號是毛色、要哪些毛色，執行 `python tools/make_coats.py <品種>` 產生毛色變化（保留明暗層次，只換毛的顏色）。
+5. 打開 `preview.html`（需要本機伺服器）或 `preview_standalone.html` 看動畫效果。
 
 **逐張版**：每個姿勢一張圖，在 `sprites/<品種>/` 下逐張執行 `python ../../tools/extract.py ../../art/<品種>/sit.jpg sit --palette palette.json`（走路圖加 `--rows2`），再手寫 `meta.json` 並執行 `python tools/build_js.py`。缺姿勢的品種會被略過。
 
@@ -174,5 +175,5 @@ art/<品種>/*.jpg ──tools/extract.py──▶ sprites/<品種>/*.json ─�
 - [x] **自動更新** — 從 GitHub Releases 下載新版並自動換檔重啟
 - [x] **多隻狗** — 最多 4 隻，家裡的狗會互相玩，品種資料改成可擴充
 - [x] **更多品種** — 柴犬、柯基、黃金獵犬、哈士奇、短毛臘腸
-- [ ] 新品種的更多毛色（例如黑柴、芝麻柴、黑白哈士奇）
+- [x] **新品種的更多毛色** — 每個品種 3～4 種
 - [ ] 音效
