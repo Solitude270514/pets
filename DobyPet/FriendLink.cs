@@ -17,6 +17,7 @@ namespace DobyPet
         public string Name { get; set; }
         public string Coat { get; set; }
         public string Id { get; set; }      // 拜訪編號，用來對應請求與回覆
+        public bool Away { get; set; }      // hello 用：主人現在不在電腦前
     }
 
     /// <summary>
@@ -44,6 +45,8 @@ namespace DobyPet
         public string PeerName { get; private set; }
         public string PeerCoat { get; private set; }
         public string PeerId { get; private set; }
+        /// <summary>朋友的主人目前不在電腦前（由對方的 hello 告知）。</summary>
+        public bool PeerAway { get; private set; }
         DateTime lastPeer = DateTime.MinValue;
 
         /// <summary>60 秒內收到過朋友的訊息就算在線上。</summary>
@@ -92,6 +95,7 @@ namespace DobyPet
                 PeerId = msg.From;
                 if (!string.IsNullOrEmpty(msg.Name)) PeerName = msg.Name;
                 if (!string.IsNullOrEmpty(msg.Coat)) PeerCoat = msg.Coat;
+                if (msg.T == "hello") PeerAway = msg.Away;
             }
             Received?.Invoke(msg);
             if (wasOnline != PeerOnline) StatusChanged?.Invoke();

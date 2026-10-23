@@ -12,6 +12,7 @@ namespace DobyPet
     ///   --call         啟動就進入「叫牠過來」選位置模式（測試用）
     ///   --profile X    使用獨立的設定檔分身，可以在同一台電腦開第二隻狗測試互訪
     ///   --visit        啟動 5 秒後自動出門拜訪（測試用）
+    ///   --present      一律當作主人在電腦前，不做閒置偵測（測試用）
     ///   --trick X      每 15 秒表演一次指定動作：peek / slipper / fart / backflip（測試用）
     /// </summary>
     public partial class App : Application
@@ -33,7 +34,7 @@ namespace DobyPet
 
             var cfg = Settings.Load();
             var bank = new SpriteBank { Coat = cfg.Coat };
-            var host = new PetHost(cfg, bank, e.Args.Contains("--demo"));
+            var host = new PetHost(cfg, bank, e.Args.Contains("--demo"), e.Args.Contains("--present"));
             tray = new Tray(host, cfg, bank);
 
             if (e.Args.Contains("--call")) Dispatcher.BeginInvoke(host.CallOver);
