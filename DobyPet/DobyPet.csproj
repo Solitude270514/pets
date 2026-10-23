@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <AssemblyName>DobyPet</AssemblyName>
+    <RootNamespace>DobyPet</RootNamespace>
+    <Product>小杜賓桌面寵物</Product>
+    <Title>DobyPet</Title>
+    <Description>住在 Windows 工作列上的像素風小杜賓：散步、睡覺、吃飯、便便、放臭屁、後空翻，主人回來會衝過來迎接。</Description>
+    <Authors>Alex</Authors>
+    <Copyright>© 2026 Alex</Copyright>
+    <RepositoryUrl>https://github.com/Solitude270514/pets</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\sprites.json" LogicalName="DobyPet.sprites.json" />
+  </ItemGroup>
+
+</Project>

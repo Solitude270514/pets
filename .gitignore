@@ -1,0 +1,15 @@
+# .NET 建置產物
+bin/
+obj/
+*.user
+.vs/
+
+# 打包好的執行檔（體積大，改用 GitHub Releases 發佈）
+release/
+
+# 由 tools/build_js.py 產生
+preview_standalone.html
+
+# Python
+__pycache__/
+*.pyc
