@@ -35,7 +35,8 @@ namespace DobyPet
         // 朋友連線
         FriendLink link;
         double helloTimer;
-        bool greeted;
+        bool greeted, peerWasOnline, quickVisit, awaySent;
+        readonly bool alwaysPresent;
 
         // 自家的狗出門拜訪
         enum VisitPhase { None, Sniffing, Waiting, Away }
@@ -55,11 +56,12 @@ namespace DobyPet
 
         public double Now => clock.Elapsed.TotalSeconds;
 
-        public PetHost(Settings cfg, SpriteBank bank, bool demo)
+        public PetHost(Settings cfg, SpriteBank bank, bool demo, bool alwaysPresent = false)
         {
             this.cfg = cfg;
             this.bank = bank;
             this.demo = demo;
+            this.alwaysPresent = alwaysPresent;
 
             Pet = new PetController(bank, demo) { DoNotDisturb = cfg.DoNotDisturb, Mischief = cfg.Mischief };
             Pet.PoopDropped += SpawnPoop;
@@ -184,23 +186,53 @@ namespace DobyPet
             helloTimer -= 1;
             if (helloTimer <= 0) { helloTimer = 20; SendHello(); }
             CheckVisitFailsafes();
+            UpdateFriendPresence();
 
-            if (hiddenForFullscreen || win.Dragging || demo) return;
+            if (hiddenForFullscreen || win.Dragging) return;
 
-            double idle = Native.IdleSeconds();
-            Pet.SetOwnerAway(idle > 180, win.CursorDip().X);
-
-            // 咬游標：你停下滑鼠 2.5 秒以上、游標在牠附近的工作列上方，偶爾會發生
-            if (cfg.StealCursor && idle > 2.5 && idle < 60 && !Pet.OwnerAway && rng.NextDouble() < .03)
+            if (!demo)
             {
-                var c = win.CursorDip();
-                if (c.Y > ground - 90 * scale && c.Y < ground && Math.Abs(c.X - Pet.X) < 300)
-                    Pet.TryStealCursor(c.X);
+                double idle = Native.IdleSeconds();
+                Pet.SetOwnerAway(!alwaysPresent && idle > 180, win.CursorDip().X);
+
+                // 咬游標：你停下滑鼠 2.5 秒以上、游標在牠附近的工作列上方，偶爾會發生
+                if (cfg.StealCursor && idle > 2.5 && idle < 60 && !Pet.OwnerAway && rng.NextDouble() < .03)
+                {
+                    var c = win.CursorDip();
+                    if (c.Y > ground - 90 * scale && c.Y < ground && Math.Abs(c.X - Pet.X) < 300)
+                        Pet.TryStealCursor(c.X);
+                }
             }
 
-            // 朋友在線上時，偶爾自己跑去找朋友玩（平均約 10 分鐘一次）
+            // 主人離開 / 回來時馬上告訴朋友，對方才知道這邊有沒有人在看
+            if (Pet.OwnerAway != awaySent) { awaySent = Pet.OwnerAway; SendHello(); }
+
+            // 對方主人在電腦前時才去拜訪（有人看才好玩）：剛上線那次 1～2 分鐘內出門，之後平均約 10 分鐘一次
             visitCooldown -= 1;
-            if (visitCooldown <= 0 && CanVisit && !Pet.OwnerAway && rng.NextDouble() < 1 / 600.0) StartVisit();
+            bool friendWatching = PeerOnline && !link.PeerAway;
+            if (visitCooldown <= 0 && friendWatching && CanVisit && !Pet.Busy && (quickVisit || rng.NextDouble() < 1 / 600.0))
+            {
+                quickVisit = false;
+                StartVisit();
+            }
+        }
+
+        /// <summary>朋友剛上線：跳通知，並安排很快去拜訪一次。</summary>
+        void UpdateFriendPresence()
+        {
+            bool online = PeerOnline;
+            if (online && !peerWasOnline)
+            {
+                Notify?.Invoke($"{link.PeerName ?? "朋友"} 的狗上線了！");
+                // 兩邊會同時發現對方上線，由識別碼比較小的那邊先出門，免得兩隻狗同時出門撞在一起
+                if (string.CompareOrdinal(cfg.InstanceId, link.PeerId) < 0)
+                {
+                    quickVisit = true;
+                    visitCooldown = 45 + rng.NextDouble() * 45;
+                }
+                StatusChanged?.Invoke();
+            }
+            peerWasOnline = online;
         }
 
         /// <summary>咬住游標時，把游標移到嘴巴的位置；主人一動滑鼠就鬆口。</summary>
@@ -280,6 +312,7 @@ namespace DobyPet
                 link = null;
             }
             greeted = false;
+            peerWasOnline = false;   // 換了配對碼，新朋友上線時要重新通知、重新安排第一次拜訪
             if (!string.IsNullOrWhiteSpace(cfg.FriendCode))
             {
                 link = new FriendLink(cfg.FriendCode, cfg.InstanceId);
@@ -296,7 +329,7 @@ namespace DobyPet
 
         void SendHello(bool reply = false)
         {
-            link?.Send(new FriendMsg { T = "hello", Name = cfg.Name, Coat = cfg.Coat, Id = reply ? "reply" : null });
+            link?.Send(new FriendMsg { T = "hello", Name = cfg.Name, Coat = cfg.Coat, Id = reply ? "reply" : null, Away = Pet.OwnerAway });
         }
 
         void SendNow(FriendMsg m)
@@ -315,6 +348,7 @@ namespace DobyPet
                 if (!link.PeerOnline) return "朋友目前不在線上";
                 if (vphase == VisitPhase.Away) return $"{cfg.Name} 正在 {link.PeerName} 家玩";
                 if (director != null) return $"{guestName} 正在家裡玩";
+                if (link.PeerAway) return $"{link.PeerName} 在線上（主人不在電腦前）";
                 return $"{link.PeerName} 在線上";
             }
         }
