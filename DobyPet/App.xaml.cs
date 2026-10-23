@@ -6,6 +6,14 @@ using System.Windows;
 
 namespace DobyPet
 {
+    /// <summary>
+    /// 啟動參數：
+    ///   --demo         示範模式：依序展示每個動作，開場自動餵一次
+    ///   --call         啟動就進入「叫牠過來」選位置模式（測試用）
+    ///   --profile X    使用獨立的設定檔分身，可以在同一台電腦開第二隻狗測試互訪
+    ///   --visit        啟動 5 秒後自動出門拜訪（測試用）
+    ///   --trick X      每 15 秒表演一次指定動作：peek / slipper / fart / backflip（測試用）
+    /// </summary>
     public partial class App : Application
     {
         Mutex mutex;
@@ -14,7 +22,10 @@ namespace DobyPet
 
         protected override void OnStartup(StartupEventArgs e)
         {
-            mutex = new Mutex(true, "DobyPet_SingleInstance", out ownsMutex);
+            int pi = Array.IndexOf(e.Args, "--profile");
+            if (pi >= 0 && pi + 1 < e.Args.Length) Settings.Profile = e.Args[pi + 1];
+
+            mutex = new Mutex(true, "DobyPet_SingleInstance_" + (Settings.Profile ?? ""), out ownsMutex);
             if (!ownsMutex) { Shutdown(); return; }   // 已經有一隻在跑了
 
             base.OnStartup(e);
@@ -22,10 +33,31 @@ namespace DobyPet
 
             var cfg = Settings.Load();
             var bank = new SpriteBank { Coat = cfg.Coat };
-            var win = new PetWindow(cfg, bank, e.Args.Contains("--demo"));
-            win.Show();
-            tray = new Tray(win, cfg, bank);
-            if (e.Args.Contains("--call")) win.Dispatcher.BeginInvoke(win.CallOver);   // 測試用：啟動就進入選位置模式
+            var host = new PetHost(cfg, bank, e.Args.Contains("--demo"));
+            tray = new Tray(host, cfg, bank);
+
+            if (e.Args.Contains("--call")) Dispatcher.BeginInvoke(host.CallOver);
+            int ti = Array.IndexOf(e.Args, "--trick");
+            if (ti >= 0 && ti + 1 < e.Args.Length)
+            {
+                Action trick = e.Args[ti + 1] switch
+                {
+                    "peek" => host.Pet.DoPeek,
+                    "slipper" => host.Pet.DoSlipper,
+                    "fart" => host.Pet.DoFart,
+                    _ => host.Pet.DoBackflip,
+                };
+                var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
+                t.Tick += (_, __) => trick();
+                t.Start();
+                Dispatcher.BeginInvoke(trick);
+            }
+            if (e.Args.Contains("--visit"))
+            {
+                var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+                t.Tick += (_, __) => { if (host.CanVisit) { t.Stop(); host.StartVisit(); } };
+                t.Start();
+            }
         }
 
         protected override void OnExit(ExitEventArgs e)

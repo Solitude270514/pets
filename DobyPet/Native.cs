@@ -26,6 +26,7 @@ namespace DobyPet
         [DllImport("user32.dll")] static extern int SetWindowLong(IntPtr hWnd, int index, int value);
         [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
         [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
+        [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
 
         /// <summary>鍵盤滑鼠已經閒置幾秒。</summary>
         public static double IdleSeconds()

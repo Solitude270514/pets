@@ -58,6 +58,7 @@ namespace DobyPet
         public static readonly string[] Zz = { "ZZZZZ", "...Z.", "..Z..", ".Z...", "ZZZZZ" };
         public static readonly string[] Poop = { "....KK.....", "...KqpK....", "..KKKKKK...", "..KpqppK...", ".KKKKKKKK..", ".KpppqppK..", "KKKKKKKKKK.", "KpqpppqppK.", "KKKKKKKKKK." };
         public static readonly string[] Bowl = { "..oooooo..", ".oooooooo.", "KUUUUUUUUK", ".KUwUUUUK.", "..KKKKKK.." };
+        public static readonly string[] Slipper = { ".KKKK.....", "KPPPPKKKK.", "KPwwPPPPPK", "KKKKKKKKKK" };
     }
 
     /// <summary>載入內嵌的 sprites.json，依目前毛色上色並快取。</summary>
