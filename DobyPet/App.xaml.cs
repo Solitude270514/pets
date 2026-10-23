@@ -14,6 +14,8 @@ namespace DobyPet
     ///   --visit        啟動 5 秒後自動出門拜訪（測試用）
     ///   --present      一律當作主人在電腦前，不做閒置偵測（測試用）
     ///   --trick X      每 15 秒表演一次指定動作：peek / slipper / fart / backflip（測試用）
+    ///   --update-now   啟動就檢查更新，有新版立刻安裝（測試用）
+    ///   --updated      由自動更新重新啟動時帶入：等舊程序結束、清掉舊檔、跳出「已更新」通知
     /// </summary>
     public partial class App : Application
     {
@@ -25,9 +27,17 @@ namespace DobyPet
         {
             int pi = Array.IndexOf(e.Args, "--profile");
             if (pi >= 0 && pi + 1 < e.Args.Length) Settings.Profile = e.Args[pi + 1];
+            bool updated = e.Args.Contains("--updated");
 
             mutex = new Mutex(true, "DobyPet_SingleInstance_" + (Settings.Profile ?? ""), out ownsMutex);
+            if (!ownsMutex && updated)
+            {
+                // 剛更新完：舊版程序正在關閉，等它放開
+                try { ownsMutex = mutex.WaitOne(TimeSpan.FromSeconds(20)); }
+                catch (AbandonedMutexException) { ownsMutex = true; }
+            }
             if (!ownsMutex) { Shutdown(); return; }   // 已經有一隻在跑了
+            if (updated) Updater.CleanupOld();
 
             base.OnStartup(e);
             DispatcherUnhandledException += (_, ex) => { Log(ex.Exception); ex.Handled = true; };
@@ -35,7 +45,7 @@ namespace DobyPet
             var cfg = Settings.Load();
             var bank = new SpriteBank { Coat = cfg.Coat };
             var host = new PetHost(cfg, bank, e.Args.Contains("--demo"), e.Args.Contains("--present"));
-            tray = new Tray(host, cfg, bank);
+            tray = new Tray(host, cfg, bank, justUpdated: updated, updateNow: e.Args.Contains("--update-now"));
 
             if (e.Args.Contains("--call")) Dispatcher.BeginInvoke(host.CallOver);
             int ti = Array.IndexOf(e.Args, "--trick");

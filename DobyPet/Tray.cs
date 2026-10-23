@@ -12,10 +12,14 @@ namespace DobyPet
         readonly SpriteBank bank;
         readonly WF.NotifyIcon icon;
         readonly WF.ContextMenuStrip menu = new();
-        readonly WF.ToolStripMenuItem header, friend, visit, dnd;
+        readonly WF.ToolStripMenuItem header, friend, visit, dnd, update;
+        readonly Updater updater = new();
+        readonly System.Windows.Threading.DispatcherTimer updateTimer = new();
+        string notifiedTag;
+        bool installing;
         Icon currentIcon;
 
-        public Tray(PetHost host, Settings cfg, SpriteBank bank)
+        public Tray(PetHost host, Settings cfg, SpriteBank bank, bool justUpdated = false, bool updateNow = false)
         {
             this.host = host;
             this.cfg = cfg;
@@ -54,15 +58,96 @@ namespace DobyPet
             };
             menu.Items.Add(dnd);
             menu.Items.Add("⚙ 設定…", null, (_, __) => OpenSettings());
+            update = new WF.ToolStripMenuItem("⬆ 更新", null, (_, __) => InstallUpdate()) { Visible = false };
+            menu.Items.Add(update);
+            menu.Items.Add("🔄 檢查更新", null, async (_, __) => await CheckUpdate(manual: true));
             menu.Items.Add("結束", null, (_, __) => Exit());
             menu.Opening += (_, __) => RefreshFriend();
 
             icon = new WF.NotifyIcon { ContextMenuStrip = menu, Visible = true };
             icon.DoubleClick += (_, __) => host.CallOver();
             host.ContextMenuRequested += () => menu.Show(WF.Cursor.Position);
-            host.Notify += text => icon.ShowBalloonTip(4000, cfg.Name, text, WF.ToolTipIcon.None);
+            host.Notify += Balloon;
             host.StatusChanged += RefreshFriend;
             Refresh();
+
+            if (justUpdated) Balloon($"已更新到 v{Updater.CurrentText} 🎉");
+
+            // 啟動 30 秒後檢查一次，之後每 6 小時；開了自動更新的話，每分鐘看看主人離開了沒
+            updateTimer.Interval = TimeSpan.FromSeconds(updateNow ? 2 : 30);
+            updateTimer.Tick += (_, __) => UpdateTick(updateNow);
+            updateTimer.Start();
+        }
+
+        void Balloon(string text) => icon.ShowBalloonTip(4000, cfg.Name, text, WF.ToolTipIcon.None);
+
+        // ── 自動更新 ─────────────────────────────
+
+        double sinceCheck = double.MaxValue;
+
+        async void UpdateTick(bool installImmediately)
+        {
+            updateTimer.Interval = TimeSpan.FromMinutes(1);
+            sinceCheck += 1;
+            if (sinceCheck >= 360 || installImmediately)
+            {
+                sinceCheck = 0;
+                await CheckUpdate(manual: false);
+            }
+            if (updater.Available != null && (installImmediately || (cfg.AutoUpdate && Native.IdleSeconds() > 180)))
+                InstallUpdate();
+        }
+
+        async System.Threading.Tasks.Task CheckUpdate(bool manual)
+        {
+            if (!Updater.CanSelfUpdate)
+            {
+                if (manual) Balloon("開發版不會自我更新，請用打包好的 DobyPet.exe");
+                return;
+            }
+            try
+            {
+                var rel = await updater.CheckAsync();
+                if (rel != null)
+                {
+                    update.Text = $"⬆ 更新到 {rel.Tag}";
+                    update.Visible = true;
+                    if (manual || notifiedTag != rel.Tag)
+                    {
+                        notifiedTag = rel.Tag;
+                        Balloon(cfg.AutoUpdate
+                            ? $"有新版本 {rel.Tag}，會在你離開電腦時自動更新"
+                            : $"有新版本 {rel.Tag}！右鍵選單按「⬆ 更新」就能安裝");
+                    }
+                }
+                else if (manual) Balloon($"已經是最新版 v{Updater.CurrentText}");
+            }
+            catch (Exception ex)
+            {
+                if (manual) Balloon("檢查更新失敗：" + ex.Message);
+            }
+        }
+
+        async void InstallUpdate()
+        {
+            var rel = updater.Available;
+            if (rel == null || installing) return;
+            installing = true;
+            update.Enabled = false;
+            update.Text = $"⬇ 正在下載 {rel.Tag}…";
+            try
+            {
+                await updater.InstallAsync(rel);   // 成功的話新版已經在啟動了
+                host.Shutdown();
+                System.Windows.Application.Current.Shutdown();
+            }
+            catch (Exception ex)
+            {
+                installing = false;
+                update.Enabled = true;
+                update.Text = $"⬆ 更新到 {rel.Tag}";
+                Balloon("更新失敗：" + ex.Message);
+            }
         }
 
         void RefreshFriend()
@@ -74,7 +159,7 @@ namespace DobyPet
         /// <summary>名字或毛色改變後，更新選單標題與圖示。</summary>
         void Refresh()
         {
-            header.Text = $"🐾 {cfg.Name}";
+            header.Text = $"🐾 {cfg.Name}　v{Updater.CurrentText}";
             icon.Text = $"{cfg.Name}（小杜賓）";
             var old = currentIcon;
             currentIcon = MakeIcon();

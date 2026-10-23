@@ -58,6 +58,7 @@
 
 - 第一次執行時，Windows SmartScreen 可能會出現「未知的發行者」警告（程式沒有數位簽章），按「其他資訊 → 仍要執行」即可。
 - 同一台電腦只會跑一隻，重複開啟不會多出一隻。
+- **自動更新**（v0.3.0 起）：啟動後與每 6 小時會到 Releases 檢查新版，有新版時跳通知，右鍵選單按「⬆ 更新」就會下載、核對 SHA-256、換檔並重新啟動。設定裡勾「有新版時自動更新」，會在你離開電腦時自己更新。也可以按「🔄 檢查更新」手動檢查。v0.3.0 之前的版本沒有這個功能，要手動下載一次。
 - 設定檔：`%AppData%\DobyPet\settings.json`；發生錯誤時同資料夾會有 `error.log`。
 - 「開機自動啟動」會寫入 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，取消勾選即移除。
 
@@ -80,6 +81,7 @@ dotnet run -- --demo        # 示範模式：依序展示每個動作，開場�
 | `--profile X` | 使用獨立的設定檔分身（`%AppData%\DobyPet_X`），可以在同一台電腦開第二隻狗 |
 | `--visit` | 啟動後朋友一上線就出門拜訪 |
 | `--present` | 一律當作主人在電腦前（測試自動拜訪時用） |
+| `--update-now` | 啟動就檢查更新，有新版立刻安裝；搭配環境變數 `DOBYPET_UPDATE_URL` 可指向假的 release 資料測試 |
 | `--trick peek\|slipper\|fart\|backflip` | 每 15 秒表演一次指定動作 |
 | `--call` | 啟動就進入「叫牠過來」選位置模式 |
 
@@ -97,6 +99,16 @@ cd DobyPet
 dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o ../release
 ```
 
+### 發佈新版
+
+自動更新是拿 `DobyPet.csproj` 的 `<Version>` 跟最新 release 的 tag 比大小，所以發版時：
+
+1. 把 `DobyPet.csproj` 的 `<Version>` 改成新版本號（例如 `0.3.1`），commit 並推上 `main`。
+2. 用上面的 `dotnet publish` 打包。
+3. 在 GitHub 建立 tag 為 `v0.3.1` 的 Release，附檔名稱必須是 **`DobyPet.exe`**。
+
+repo 必須是公開的，程式才能在不登入的情況下讀到 Releases。
+
 ### 程式結構（`DobyPet/`）
 
 | 檔案 | 職責 |
@@ -106,6 +118,7 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 | `DogWindow.cs` | 顯示一隻狗的透明置頂視窗：滑鼠點擊、拖曳 |
 | `VisitDirector.cs` | 朋友的狗來作客時，指揮兩隻狗一起玩的腳本 |
 | `FriendLink.cs` | 跟朋友電腦的連線：MQTT 中繼、配對碼雜湊頻道、AES-GCM 加密 |
+| `Updater.cs` | 自動更新：查 GitHub Releases、下載、核對 SHA-256、換檔重啟 |
 | `Stage.cs` | 小型軟體繪圖：所有東西先畫在低解析度像素格，再整張放大，保持像素風 |
 | `Sprites.cs` | 載入內嵌的 `Assets/sprites.json`、毛色調色盤、特效小圖 |
 | `ItemWindow.cs` | 工作列上的道具（狗碗、便便） |

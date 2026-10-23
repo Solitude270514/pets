@@ -20,6 +20,9 @@ namespace DobyPet
         /// <summary>允許咬住游標拖著跑（只在你沒動滑鼠、游標在牠附近時才會發生）。</summary>
         public bool StealCursor { get; set; } = true;
 
+        /// <summary>有新版時自動安裝（只在你離開電腦時進行），否則只跳通知。</summary>
+        public bool AutoUpdate { get; set; }
+
         /// <summary>跟朋友的配對碼，空白 = 不連線。</summary>
         public string FriendCode { get; set; } = "";
         /// <summary>這台電腦的識別碼，用來分辨訊息是誰送的。</summary>

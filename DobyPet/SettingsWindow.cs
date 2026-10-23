@@ -44,6 +44,7 @@ namespace DobyPet
             };
 
             var auto = new CheckBox { Content = "開機時自動啟動", IsChecked = cfg.AutoStart, Margin = new Thickness(0, 12, 0, 0) };
+            var autoUpdate = new CheckBox { Content = "有新版時自動更新（在你離開電腦時安裝）", IsChecked = cfg.AutoUpdate, Margin = new Thickness(0, 6, 0, 0) };
 
             var ok = new Button { Content = "儲存", IsDefault = true, Width = 80, Margin = new Thickness(0, 0, 8, 0) };
             var cancel = new Button { Content = "取消", IsCancel = true, Width = 80 };
@@ -56,6 +57,7 @@ namespace DobyPet
                 cfg.StealCursor = steal.IsChecked == true;
                 cfg.FriendCode = FriendLink.NormalizeCode(code.Text);
                 cfg.AutoStart = auto.IsChecked == true;
+                cfg.AutoUpdate = autoUpdate.IsChecked == true;
                 DialogResult = true;
             };
 
@@ -73,6 +75,8 @@ namespace DobyPet
             Row("朋友配對碼", codeRow);
             panel.Children.Add(codeHint);
             panel.Children.Add(auto);
+            panel.Children.Add(autoUpdate);
+            panel.Children.Add(new TextBlock { Text = $"目前版本 v{Updater.CurrentText}", FontSize = 11, Opacity = .6, Margin = new Thickness(0, 8, 0, 0) });
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
             buttons.Children.Add(ok);
             buttons.Children.Add(cancel);
