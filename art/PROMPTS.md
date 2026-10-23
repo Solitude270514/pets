@@ -8,6 +8,7 @@
 |---|---|
 | `sheet.jpg`（或 .png/.webp） | 動作表：兩排三列共 6 個姿勢 |
 | `walk_sheet.jpg` | 走路分解圖：一排 4 格 |
+| `import.json`（選用） | `{"flip": ["stand", ...], "walkFlip": false}`：Gemini 畫成**面向右邊**的姿勢列在 `flip`，匯入時翻成面向左 |
 
 品種代號：`shiba`（柴犬）、`corgi`（柯基）、`golden`（黃金獵犬）、`husky`（哈士奇）、`dachshund`（短毛臘腸）。
 
@@ -36,16 +37,27 @@ Background: one flat solid magenta color (#FF00FF) only — no scenery, no groun
 
 ### 第 2 張：走路圖
 
-附上**剛剛生成的動作表**，貼上：
+先從動作表裁出站姿參考圖（只附一隻狗，Gemini 才不會把整張動作表拿來改）：
+
+```bash
+python tools/crop_ref.py shiba
+```
+
+會產生 `art/shiba/stand_reference.png`。附上**這張**（不要附整張動作表），貼上：
 
 ```
-Using the attached sprite sheet as the character reference, draw the SAME puppy (identical design, colors, markings, same pixel size and same scale as in the sheet).
-Create a walk cycle: 4 frames in ONE horizontal row, evenly spaced with clear gaps between frames, all facing left.
+Generate a brand-new image from scratch. Do NOT edit, modify or extend the attached image — it is only a reference for what the puppy looks like.
+Draw the SAME puppy (identical design, colors, markings, same pixel size and same scale as the reference) as a walk cycle:
+exactly 4 frames in ONE horizontal row, evenly spaced with clear gaps between frames, and nothing else in the image.
+All 4 frames face LEFT (mirror the reference if it faces right).
 Frame 1: contact pose, Frame 2: passing pose, Frame 3: opposite contact pose, Frame 4: opposite passing pose.
 Legs move naturally like a trotting dog; body, head and tail stay identical between frames except for a slight up-down bounce.
-Pixel art with crisp hard-edged pixels, no anti-aliasing, no grid lines.
+Wide horizontal image. Pixel art with crisp hard-edged pixels, no anti-aliasing, no grid lines.
 Background: one flat solid magenta color (#FF00FF) only — no scenery, no shadows, no text, no labels.
 ```
+
+如果 Gemini 還是畫成**面向右邊**，不用重生：把 `art/<品種>/import.json` 的 `"walkFlip"` 改成 `true`，匯入時會自動翻轉。
+如果圖裡混進了其他姿勢，匯入工具會依閱讀順序只取前 4 格，再看總覽圖確認即可。
 
 ### 品種描述（替換 `{品種描述}`）
 

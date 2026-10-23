@@ -141,7 +141,7 @@ art/<品種>/*.jpg ──tools/extract.py──▶ sprites/<品種>/*.json ─�
 
 **快速版（建議）**：每個品種只要 2 張圖。
 
-1. 照 [art/PROMPTS.md](art/PROMPTS.md) 用 Gemini 生成「動作表」`sheet.jpg`（6 個姿勢）與「走路圖」`walk_sheet.jpg`（4 格），背景純洋紅色 `#FF00FF`，放進 `art/<品種>/`。
+1. 照 [art/PROMPTS.md](art/PROMPTS.md) 用 Gemini 生成「動作表」`sheet.jpg`（6 個姿勢），背景純洋紅色 `#FF00FF`，放進 `art/<品種>/`。執行 `python tools/crop_ref.py <品種>` 裁出站姿參考圖，再用它生成「走路圖」`walk_sheet.jpg`（4 格）。面向右邊的姿勢記在 `art/<品種>/import.json` 的 `flip`。
 2. 執行 `python tools/import_breed.py <品種>`：自動抓 12 色調色盤、依閱讀順序切出 6 個姿勢與 4 格走路、統一大小、建立 `meta.json`，產生 `sprites/<品種>/overview.png` 總覽圖，最後執行 `build_js.py`。
 3. 看總覽圖確認，再補上 `meta.json` 的眨眼、搖尾巴、嘴巴等位置（不補也能用，只是不會眨眼、搖尾巴）。
 4. 打開 `preview.html`（需要本機伺服器）或 `preview_standalone.html` 看動畫效果。

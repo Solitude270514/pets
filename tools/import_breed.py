@@ -3,6 +3,8 @@
 需要的檔案（副檔名 jpg/png/webp 都可以）：
     art/<品種>/sheet.*        一張圖、兩排三列共 6 個姿勢：站、坐、睡 / 吃、便便、伸懶腰
     art/<品種>/walk_sheet.*   一排 4 格走路分解圖
+    art/<品種>/import.json    （選用）{"flip": ["stand", ...], "walkFlip": false}
+                              Gemini 畫成面向右邊的姿勢列在 flip，匯入時會翻成面向左（程式假設都面向左）
 
 做的事：
     1. 從兩張圖的前景顏色自動找出 12 色調色盤（sprites/<品種>/palette.json）
@@ -38,8 +40,8 @@ def main():
 
     sheet_cells, sheet_fg, sp = ex.load_cells(find(art, 'sheet'))
     walk_cells, walk_fg, wp = ex.load_cells(find(art, 'walk_sheet'))
-    sheet_blobs = ex.find_sprites(sheet_fg, gap=2)
-    walk_blobs = ex.find_sprites(walk_fg, gap=2)
+    sheet_blobs = ex.find_sprites(sheet_fg, gap=1)
+    walk_blobs = ex.find_sprites(walk_fg, gap=1)
     print(f'動作表：格子 {sp:.2f}px，找到 {len(sheet_blobs)} 隻（應該是 6）')
     print(f'走路圖：格子 {wp:.2f}px，找到 {len(walk_blobs)} 格（應該是 4）')
 
@@ -51,8 +53,19 @@ def main():
     letter = ex.palette_letter(palette)
 
     # 2. 切圖
+    opts_path = os.path.join(art, 'import.json')
+    opts = json.load(open(opts_path, encoding='utf-8')) if os.path.exists(opts_path) else {}
+    flip = set(opts.get('flip', []))
+    mirror = lambda rows: [r[::-1] for r in rows]
+
     sheet_frames = [ex.make_frame(ex.to_rows(sheet_cells, y0, x0, m, letter)) for y0, x0, m in sheet_blobs]
+    sheet_frames = [ex.make_frame(mirror(f['rows'])) if n in flip else f for n, f in zip(SHEET_POSES, sheet_frames)] + sheet_frames[len(SHEET_POSES):]
     walk_frames = [ex.make_frame(ex.to_rows(walk_cells, y0, x0, m, letter)) for y0, x0, m in walk_blobs]
+    if opts.get('walkFlip'): walk_frames = [ex.make_frame(mirror(f['rows'])) for f in walk_frames]
+    if len(walk_frames) > 4:
+        # Gemini 有時會把附圖當成要修改的圖，只把前面幾格改成走路、後面留著舊姿勢；依閱讀順序取前 4 格
+        print(f'⚠ 走路圖找到 {len(walk_frames)} 格，只取前 4 格，請看 overview.png 確認都是走路')
+        walk_frames = walk_frames[:4]
     if len(sheet_frames) < len(SHEET_POSES):
         print(f'⚠ 動作表只切出 {len(sheet_frames)} 隻，可能有兩隻黏在一起或畫太少，請看 overview.png，必要時重新生成')
     if len(sheet_frames) > len(SHEET_POSES):

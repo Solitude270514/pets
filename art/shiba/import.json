@@ -1,0 +1,9 @@
+{
+  "flip": [
+    "stand",
+    "sit",
+    "poop",
+    "stretch"
+  ],
+  "walkFlip": false
+}

@@ -34,8 +34,8 @@ def is_bg(px):
     if r > 170 and b > 170 and g < 120: return True
     return b > g+40 and r > g+40 and abs(r-b) < 60   # 背景與輪廓混色的邊緣
 
-def load_cells(path):
-    """回傳 (cells[H,W,3], 前景遮罩[H,W], 格子大小)。"""
+def load_cells(path, with_origin=False):
+    """回傳 (cells[H,W,3], 前景遮罩[H,W], 格子大小)；with_origin=True 時多回傳格線起點 (px, py)，用來換算回原圖座標。"""
     im = np.asarray(Image.open(path).convert('RGB')).astype(float)
     g = im.mean(axis=2)
     dx = np.abs(np.diff(g, axis=1)).mean(axis=0); dy = np.abs(np.diff(g, axis=0)).mean(axis=1)
@@ -50,7 +50,7 @@ def load_cells(path):
             blk = im[int(y0)+m:int(y0+p)-m, int(x0)+m:int(x0+p)-m]
             cells[j, i] = np.median(blk.reshape(-1, 3), axis=0)
     fg = np.array([[not is_bg(cells[j, i]) for i in range(W)] for j in range(H)])
-    return cells, fg, p
+    return (cells, fg, p, (px, py)) if with_origin else (cells, fg, p)
 
 # ── 切出每一隻狗 ───────────────────────────────
 
@@ -79,9 +79,14 @@ def _dilate(mask, r):
             out |= sh
     return out
 
-def find_sprites(fg, gap=2, min_px=30):
-    """把前景切成一塊塊（相距 gap 格以內的視為同一隻，例如吃飯時的狗碗），依閱讀順序（由上而下、由左而右）排好。
+def find_sprites(fg, gap=1, min_px=30):
+    """把前景切成一塊塊（相距 gap 格以內的視為同一隻（太大會把排與排之間的狗連起來），例如吃飯時的狗碗），依閱讀順序（由上而下、由左而右）排好。
     回傳 [(y0, x0, mask), ...]。"""
+    if gap:
+        # 先濾掉零散的小雜點（JPEG 壓縮殘影），不然擴張時會把兩隻相距很遠的狗串在一起
+        lab0, n0 = _label(fg)
+        sizes = np.bincount(lab0.ravel(), minlength=n0 + 1)
+        fg = fg & (sizes[lab0] >= 8)
     lab, n = _label(_dilate(fg, gap) if gap else fg)
     blobs = []
     for k in range(1, n+1):
@@ -214,7 +219,7 @@ def main():
     palette = json.load(open(args[args.index('--palette') + 1], encoding='utf-8')) if '--palette' in args else None
 
     cells, fg, p = load_cells(src)
-    blobs = find_sprites(fg, gap=2 if sheet else 0)
+    blobs = find_sprites(fg, gap=1 if sheet else 0)
     letter = palette_letter(palette) if palette else doberman_letter
     frames = [make_frame(to_rows(cells, y0, x0, m, letter, peel_pink=not palette)) for y0, x0, m in blobs]
     print(f'{src}: 格子 {p:.2f}px，找到 {len(frames)} 隻：{[(len(f["rows"][0]), len(f["rows"])) for f in frames]}')
