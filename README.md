@@ -139,10 +139,14 @@ art/<品種>/*.jpg ──tools/extract.py──▶ sprites/<品種>/*.json ─�
                                                                               └▶ preview_standalone.html
 ```
 
-1. 照 [art/PROMPTS.md](art/PROMPTS.md) 用 Gemini 生成 7 張圖（站姿參考、坐、睡、吃、走路分解圖、便便、伸懶腰），背景純洋紅色 `#FF00FF`，放進 `art/<品種>/`。
-2. 在 `sprites/<品種>/` 下逐張執行 `python ../../tools/extract.py ../../art/<品種>/sit.jpg sit`（走路圖加 `--rows2`），檢查產生的 `.png`。
-3. 寫 `sprites/<品種>/meta.json`（格式見下），再到專案根目錄執行 `python tools/build_js.py`。缺姿勢的品種會被略過。
+**快速版（建議）**：每個品種只要 2 張圖。
+
+1. 照 [art/PROMPTS.md](art/PROMPTS.md) 用 Gemini 生成「動作表」`sheet.jpg`（6 個姿勢）與「走路圖」`walk_sheet.jpg`（4 格），背景純洋紅色 `#FF00FF`，放進 `art/<品種>/`。
+2. 執行 `python tools/import_breed.py <品種>`：自動抓 12 色調色盤、依閱讀順序切出 6 個姿勢與 4 格走路、統一大小、建立 `meta.json`，產生 `sprites/<品種>/overview.png` 總覽圖，最後執行 `build_js.py`。
+3. 看總覽圖確認，再補上 `meta.json` 的眨眼、搖尾巴、嘴巴等位置（不補也能用，只是不會眨眼、搖尾巴）。
 4. 打開 `preview.html`（需要本機伺服器）或 `preview_standalone.html` 看動畫效果。
+
+**逐張版**：每個姿勢一張圖，在 `sprites/<品種>/` 下逐張執行 `python ../../tools/extract.py ../../art/<品種>/sit.jpg sit --palette palette.json`（走路圖加 `--rows2`），再手寫 `meta.json` 並執行 `python tools/build_js.py`。缺姿勢的品種會被略過。
 
 `meta.json` 欄位（座標都是站姿圖 `stand.json` 上的 `[x, y]` 或 `[y, x, 字母]`）：
 

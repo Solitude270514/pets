@@ -1,9 +1,13 @@
 """把 Gemini 生成的像素狗圖（洋紅 #FF00FF 背景）轉成調色盤字母格。
 
-在 sprites/<品種>/ 資料夾下執行，會產生 <輸出名稱>.json（字母格）與 <輸出名稱>.png（放大檢查圖）：
+可以當指令用，也可以被 import_breed.py 匯入使用。
+
+指令用法（在 sprites/<品種>/ 資料夾下執行，產生 <名稱>.json 字母格與 <名稱>.png 放大檢查圖）：
     cd sprites/doberman
     python ../../tools/extract.py ../../art/doberman/sit.jpg sit
-    python ../../tools/extract.py ../../art/doberman/walk_sheet.jpg walk --rows2   # 兩排的分解圖
+    python ../../tools/extract.py ../../art/doberman/walk_sheet.jpg walk --rows2       # 一張圖多格，全部存成同一個姿勢
+    python ../../tools/extract.py sheet.jpg x --sheet stand,sit,sleep,eat,poop,stretch  # 動作表：依閱讀順序切成多個姿勢
+    python ../../tools/extract.py sit.jpg sit --palette palette.json                    # 用指定調色盤（新品種）
 
 轉完記得跑 python tools/build_js.py 把資料合併進預覽頁與桌面程式。
 """
@@ -12,18 +16,96 @@ import numpy as np
 from PIL import Image
 from collections import deque
 
-def period(sig, lo=5, hi=26):
+# ── 讀圖：偵測像素格大小，取每一格的代表色 ─────────────────
+
+def _period(sig, lo=5, hi=26):
     s = sig - sig.mean(); n = np.arange(len(s)); best = (0, 0)
     for p in np.arange(lo, hi, 0.02):
         c = abs((s * np.exp(-2j*np.pi*n/p)).sum()) * (p ** 0.5)
         if c > best[0]: best = (c, p)
     return best[1]
 
-def phase(sig, p):
+def _phase(sig, p):
     s = sig - sig.mean(); n = np.arange(len(s))
     return (-np.angle((s*np.exp(-2j*np.pi*n/p)).sum())/(2*np.pi)*p) % p
 
-def letter(px):
+def is_bg(px):
+    r, g, b = px
+    if r > 170 and b > 170 and g < 120: return True
+    return b > g+40 and r > g+40 and abs(r-b) < 60   # 背景與輪廓混色的邊緣
+
+def load_cells(path):
+    """回傳 (cells[H,W,3], 前景遮罩[H,W], 格子大小)。"""
+    im = np.asarray(Image.open(path).convert('RGB')).astype(float)
+    g = im.mean(axis=2)
+    dx = np.abs(np.diff(g, axis=1)).mean(axis=0); dy = np.abs(np.diff(g, axis=0)).mean(axis=1)
+    p = (_period(dx) + _period(dy)) / 2
+    px, py = _phase(dx, p), _phase(dy, p)
+    W = int((im.shape[1]-px)//p); H = int((im.shape[0]-py)//p)
+    cells = np.zeros((H, W, 3))
+    m = max(1, int(p*0.25))
+    for j in range(H):
+        for i in range(W):
+            x0 = px+i*p; y0 = py+j*p
+            blk = im[int(y0)+m:int(y0+p)-m, int(x0)+m:int(x0+p)-m]
+            cells[j, i] = np.median(blk.reshape(-1, 3), axis=0)
+    fg = np.array([[not is_bg(cells[j, i]) for i in range(W)] for j in range(H)])
+    return cells, fg, p
+
+# ── 切出每一隻狗 ───────────────────────────────
+
+def _label(mask):
+    H, W = mask.shape; lab = np.zeros((H, W), int); n = 0
+    for y in range(H):
+        for x in range(W):
+            if mask[y, x] and not lab[y, x]:
+                n += 1; q = deque([(y, x)]); lab[y, x] = n
+                while q:
+                    cy, cx = q.popleft()
+                    for dy in (-1, 0, 1):
+                        for dx in (-1, 0, 1):
+                            ny, nx = cy+dy, cx+dx
+                            if 0 <= ny < H and 0 <= nx < W and mask[ny, nx] and not lab[ny, nx]:
+                                lab[ny, nx] = n; q.append((ny, nx))
+    return lab, n
+
+def _dilate(mask, r):
+    out = mask.copy()
+    H, W = mask.shape
+    for dy in range(-r, r+1):
+        for dx in range(-r, r+1):
+            sh = np.zeros_like(mask)
+            sh[max(0, dy):H+min(0, dy), max(0, dx):W+min(0, dx)] = mask[max(0, -dy):H+min(0, -dy), max(0, -dx):W+min(0, -dx)]
+            out |= sh
+    return out
+
+def find_sprites(fg, gap=2, min_px=30):
+    """把前景切成一塊塊（相距 gap 格以內的視為同一隻，例如吃飯時的狗碗），依閱讀順序（由上而下、由左而右）排好。
+    回傳 [(y0, x0, mask), ...]。"""
+    lab, n = _label(_dilate(fg, gap) if gap else fg)
+    blobs = []
+    for k in range(1, n+1):
+        m = (lab == k) & fg
+        if m.sum() < min_px: continue
+        ys, xs = np.where(m)
+        y0, y1, x0, x1 = ys.min(), ys.max()+1, xs.min(), xs.max()+1
+        blobs.append((y0, x0, m[y0:y1, x0:x1]))
+    # 分排：中心點落在目前這一排的上下範圍內就算同一排
+    blobs.sort(key=lambda b: b[0] + b[2].shape[0] / 2)
+    rows = []
+    for b in blobs:
+        cy = b[0] + b[2].shape[0] / 2
+        if rows and rows[-1]['top'] <= cy <= rows[-1]['bottom']:
+            rows[-1]['items'].append(b)
+            rows[-1]['bottom'] = max(rows[-1]['bottom'], b[0] + b[2].shape[0])
+        else:
+            rows.append({'top': b[0], 'bottom': b[0] + b[2].shape[0], 'items': [b]})
+    return [b for r in rows for b in sorted(r['items'], key=lambda b: b[1])]
+
+# ── 上色分類 ──────────────────────────────────
+
+def doberman_letter(px):
+    """杜賓用的固定分類：中性色依亮度分 K/S/B/H，暖色分 E/D/T。"""
     r, g, b = px; L = (r+g+b)/3
     if b > r+25 and b > g+15:              # 藍色狗碗
         return 'U' if L > 90 else 'u'
@@ -36,61 +118,50 @@ def letter(px):
     if L < 95: return 'H'
     return 'W'
 
-def is_bg(px):
-    r, g, b = px
-    if r > 170 and b > 170 and g < 120: return True
-    return b > g+40 and r > g+40 and abs(r-b) < 60   # 背景與輪廓混色的邊緣
+DOBERMAN_PREVIEW = {'K':(11,11,11),'S':(28,29,29),'B':(46,47,47),'H':(74,75,74),'W':(214,214,214),'E':(110,68,32),
+                    'D':(154,92,44),'T':(189,120,64),'P':(200,90,110),'U':(80,140,220),'u':(40,80,160)}
 
-def components(mask):
-    H, W = mask.shape; lab = np.zeros((H, W), int); n = 0; out = []
-    for y in range(H):
-        for x in range(W):
-            if mask[y, x] and not lab[y, x]:
-                n += 1; q = deque([(y, x)]); lab[y, x] = n; pts = []
-                while q:
-                    cy, cx = q.popleft(); pts.append((cy, cx))
-                    for dy in (-1, 0, 1):
-                        for dx in (-1, 0, 1):
-                            ny, nx = cy+dy, cx+dx
-                            if 0 <= ny < H and 0 <= nx < W and mask[ny, nx] and not lab[ny, nx]:
-                                lab[ny, nx] = n; q.append((ny, nx))
-                out.append(pts)
-    return out
+def hex_rgb(h): h = h.lstrip('#'); return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
 
-def fill_holes(m):
-    H, W = m.shape; mm = np.pad(m, 1); out = np.zeros_like(mm); q = deque([(0, 0)]); out[0, 0] = True
-    while q:
-        y, x = q.popleft()
-        for dy, dx in ((1,0),(-1,0),(0,1),(0,-1)):
-            ny, nx = y+dy, x+dx
-            if 0 <= ny < H+2 and 0 <= nx < W+2 and not out[ny, nx] and not mm[ny, nx]:
-                out[ny, nx] = True; q.append((ny, nx))
-    return m | ~out[1:-1, 1:-1]
+def palette_letter(palette):
+    """用指定調色盤 {字母: '#色碼'} 做最近色分類。"""
+    keys = list(palette.keys()); cols = np.array([hex_rgb(palette[k]) for k in keys], float)
+    def f(px):
+        return keys[int(((cols - np.asarray(px)) ** 2).sum(1).argmin())]
+    return f
 
-def main():
-    src, name = sys.argv[1], sys.argv[2]
-    im = np.asarray(Image.open(src).convert('RGB')).astype(float)
-    g = im.mean(axis=2)
-    dx = np.abs(np.diff(g, axis=1)).mean(axis=0); dy = np.abs(np.diff(g, axis=0)).mean(axis=1)
-    p = (period(dx) + period(dy)) / 2
-    px, py = phase(dx, p), phase(dy, p)
-    W = int((im.shape[1]-px)//p); H = int((im.shape[0]-py)//p)
-    cells = np.zeros((H, W, 3))
-    for j in range(H):
-        for i in range(W):
-            x0 = px+i*p; y0 = py+j*p; m = max(1, int(p*0.25))
-            blk = im[int(y0)+m:int(y0+p)-m, int(x0)+m:int(x0+p)-m]
-            cells[j, i] = np.median(blk.reshape(-1, 3), axis=0)
-    fg = np.array([[not is_bg(cells[j, i]) for i in range(W)] for j in range(H)])
-    comps = [c for c in components(fg) if len(c) > 30]
-    comps.sort(key=lambda c: min(x for _, x in c) + 1000*(min(y for y, _ in c)//(H//2+1) if '--rows2' in sys.argv else 0))
-    sprites = []
-    for c in comps:
-        ys = [y for y, _ in c]; xs = [x for _, x in c]
-        y0, y1, x0, x1 = min(ys), max(ys)+1, min(xs), max(xs)+1
-        m = np.zeros((y1-y0, x1-x0), bool)
-        for y, x in c: m[y-y0, x-x0] = True
-        rows = [''.join(letter(cells[y0+j, x0+i]) if m[j, i] else '.' for i in range(x1-x0)) for j in range(y1-y0)]
+PALETTE_SYMBOLS = '0123456789abcdefgh'
+
+def auto_palette(pixel_arrays, k=12, seed=0):
+    """從前景像素用 k-means 找出 k 個主要顏色，依亮度排序後編成 '0','1',…,'9','a','b'（0 最暗）。"""
+    px = np.concatenate(pixel_arrays).astype(float)
+    rng = np.random.default_rng(seed)
+    # k-means++ 初始化
+    cent = [px[rng.integers(len(px))]]
+    for _ in range(k - 1):
+        d = np.min(((px[:, None] - np.array(cent)[None]) ** 2).sum(-1), axis=1)
+        cent.append(px[rng.choice(len(px), p=d / d.sum())])
+    cent = np.array(cent)
+
+    def fit(cent):
+        for _ in range(40):
+            lab = ((px[:, None] - cent[None]) ** 2).sum(-1).argmin(1)
+            cent = np.array([px[lab == i].mean(0) if (lab == i).any() else cent[i] for i in range(len(cent))])
+        return cent
+
+    cent = fit(cent)
+    # 只佔幾個像素、但跟所有主色都差很多的顏色（例如眼睛反光、舌頭）另外保留，不要被大片顏色吃掉
+    for _ in range(len(PALETTE_SYMBOLS) - k):
+        dist = np.sqrt(((px[:, None] - cent[None]) ** 2).sum(-1).min(1))
+        far = px[dist > 55]
+        if len(far) < 3: break
+        cent = fit(np.vstack([cent, far.mean(0)]))
+    cent = cent[np.argsort(cent @ [0.299, 0.587, 0.114])]
+    return {PALETTE_SYMBOLS[i]: '#%02x%02x%02x' % tuple(int(round(v)) for v in c) for i, c in enumerate(cent)}
+
+def to_rows(cells, y0, x0, m, letter, peel_pink=False):
+    rows = [''.join(letter(cells[y0+j, x0+i]) if m[j, i] else '.' for i in range(m.shape[1])) for j in range(m.shape[0])]
+    if peel_pink:
         # 剝掉貼著透明區的粉紅邊（JPEG 混色殘影），舌頭在嘴巴裡面不會被剝到
         g = [list(r) for r in rows]; changed = True
         while changed:
@@ -101,21 +172,63 @@ def main():
                                               for dy, dx in ((1,0),(-1,0),(0,1),(0,-1))):
                         g[j][i] = '.'; changed = True
         rows = [''.join(r) for r in g]
-        # 對齊點：上半身（頭+背）像素的水平重心，讓各格不會左右抖動
-        top = [i for j in range(min(25, len(rows))) for i, ch in enumerate(rows[j]) if ch != '.']
-        sprites.append({'rows': rows, 'ax': round(sum(top)/len(top), 1)})
-    print(f'{name}: period={p:.2f} grid={W}x{H} sprites={[(len(s["rows"][0]), len(s["rows"]), s["ax"]) for s in sprites]}')
-    json.dump(sprites, open(f'{name}.json', 'w'))
-    # 預覽圖
-    sprites_rows = [s['rows'] for s in sprites]
-    pal = {'K':(11,11,11),'S':(28,29,29),'B':(46,47,47),'H':(74,75,74),'W':(214,214,214),'E':(110,68,32),'D':(154,92,44),'T':(189,120,64),'P':(200,90,110),'U':(80,140,220),'u':(40,80,160)}
-    Wt = sum(len(s[0])+2 for s in sprites_rows); Ht = max(len(s) for s in sprites_rows)
-    img = Image.new('RGB', (Wt, Ht), (200, 230, 255)); ox = 0
-    for s in sprites_rows:
-        for j, r in enumerate(s):
-            for i, ch in enumerate(r):
-                if ch != '.': img.putpixel((ox+i, j), pal[ch])
-        ox += len(s[0])+2
-    img.resize((Wt*6, Ht*6), Image.NEAREST).save(f'{name}.png')
+    return trim(rows)
 
-main()
+def trim(rows):
+    """去掉四周全透明的行列（剝邊後可能多出來）。"""
+    ys = [j for j, r in enumerate(rows) if r.strip('.')]
+    if not ys: return rows
+    rows = rows[ys[0]:ys[-1]+1]
+    xs = [i for i in range(len(rows[0])) if any(r[i] != '.' for r in rows)]
+    return [r[xs[0]:xs[-1]+1] for r in rows]
+
+def make_frame(rows):
+    # 對齊點：上半身（頭+背）像素的水平重心，讓走路各格不會左右抖動
+    top = [i for j in range(min(25, len(rows))) for i, ch in enumerate(rows[j]) if ch != '.']
+    return {'rows': rows, 'ax': round(sum(top)/len(top), 1) if top else len(rows[0]) / 2}
+
+def resize_rows(rows, factor):
+    """最近鄰縮放字母格（統一動作表與走路圖的大小用）。"""
+    H, W = len(rows), len(rows[0]); nh, nw = max(1, round(H*factor)), max(1, round(W*factor))
+    return [''.join(rows[min(H-1, int(j/factor))][min(W-1, int(i/factor))] for i in range(nw)) for j in range(nh)]
+
+def save_preview(frames_by_name, path, color_of):
+    """把多個姿勢並排畫成一張放大檢查圖。"""
+    items = [(n, f['rows']) for n, fs in frames_by_name.items() for f in fs]
+    Wt = sum(len(r[0]) + 3 for _, r in items); Ht = max(len(r) for _, r in items)
+    img = Image.new('RGB', (Wt, Ht), (200, 230, 255)); ox = 0
+    for _, rows in items:
+        for j, r in enumerate(rows):
+            for i, ch in enumerate(r):
+                if ch != '.': img.putpixel((ox+i, Ht - len(rows) + j), color_of(ch))
+        ox += len(rows[0]) + 3
+    img.resize((Wt*5, Ht*5), Image.NEAREST).save(path)
+
+# ── 指令 ─────────────────────────────────────
+
+def main():
+    sys.stdout.reconfigure(encoding='utf-8')
+    args = sys.argv[1:]
+    src, name = args[0], args[1]
+    sheet = args[args.index('--sheet') + 1].split(',') if '--sheet' in args else None
+    palette = json.load(open(args[args.index('--palette') + 1], encoding='utf-8')) if '--palette' in args else None
+
+    cells, fg, p = load_cells(src)
+    blobs = find_sprites(fg, gap=2 if sheet else 0)
+    letter = palette_letter(palette) if palette else doberman_letter
+    frames = [make_frame(to_rows(cells, y0, x0, m, letter, peel_pink=not palette)) for y0, x0, m in blobs]
+    print(f'{src}: 格子 {p:.2f}px，找到 {len(frames)} 隻：{[(len(f["rows"][0]), len(f["rows"])) for f in frames]}')
+
+    out = {}
+    if sheet:
+        if len(frames) != len(sheet):
+            print(f'⚠ 動作表應該有 {len(sheet)} 隻，實際找到 {len(frames)} 隻，請檢查 {name}_check.png')
+        for n, f in zip(sheet, frames): out[n] = [f]
+    else:
+        out[name] = frames
+    for n, fs in out.items(): json.dump(fs, open(f'{n}.json', 'w'))
+    color_of = (lambda ch: hex_rgb(palette[ch]) if ch in palette else (255, 0, 255)) if palette else (lambda ch: DOBERMAN_PREVIEW[ch])
+    save_preview({f'{i}': [f] for i, f in enumerate(frames)} if sheet else out, f'{name}_check.png' if sheet else f'{name}.png', color_of)
+
+if __name__ == '__main__':
+    main()
