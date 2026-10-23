@@ -197,6 +197,46 @@ def resize_rows(rows, factor):
     H, W = len(rows), len(rows[0]); nh, nw = max(1, round(H*factor)), max(1, round(W*factor))
     return [''.join(rows[min(H-1, int(j/factor))][min(W-1, int(i/factor))] for i in range(nw)) for j in range(nh)]
 
+def legs_only(frames, split=0.62):
+    """走路圖「只換腿」：每一格的上半身（頭、背、尾巴）都換成第 1 格的，下半身（腿）保留各格原本的。
+    Gemini 有時每格的頭轉向不同（正面 / 側面交替），播放時頭會一直跳；這樣處理後只有腳在動。
+    split：上下半身的分界在第 1 格高度的幾成。"""
+    base = frames[0]['rows']
+    bh, bw = len(base), len(base[0])
+    cut = int(bh * split)
+    bm = np.array([[c != '.' for c in r] for r in base])
+    out = [frames[0]]
+    for f in frames[1:]:
+        rows = f['rows']; h, w = len(rows), len(rows[0])
+        m = np.array([[c != '.' for c in r] for r in rows])
+        # 找出這一格的上半身對到第 1 格的最佳位移：以腳底對齊為起點，左右搜尋幾格；
+        # 上下只容許 1 格，不然會被原本那格「低頭的側臉」帶偏，整隻狗變成上下跳
+        best, best_d = None, (0, h - bh)
+        for dy in range(h - bh - 1, h - bh + 2):
+            for dx in range(-6, 7):
+                score = 0
+                for y in range(cut):
+                    ty = y + dy
+                    if not 0 <= ty < h: continue
+                    for x in range(bw):
+                        tx = x + dx
+                        if 0 <= tx < w and bm[y, x] == m[ty, tx] and bm[y, x]: score += 1
+                if best is None or score > best: best, best_d = score, (dx, dy)
+        dx, dy = best_d
+        # 畫布要容得下第 1 格的上半身與這一格的腿
+        left = min(0, dx); top = min(0, dy)
+        W = max(w, bw + dx) - left; H = max(h, bh + dy) - top
+        g = [['.'] * W for _ in range(H)]
+        for y in range(h):           # 這一格的腿
+            if y < cut + dy: continue
+            for x in range(w):
+                if rows[y][x] != '.': g[y - top][x - left] = rows[y][x]
+        for y in range(cut):         # 第 1 格的上半身
+            for x in range(bw):
+                if base[y][x] != '.': g[y + dy - top][x + dx - left] = base[y][x]
+        out.append(make_frame(trim([''.join(r) for r in g])))
+    return out
+
 def save_preview(frames_by_name, path, color_of):
     """把多個姿勢並排畫成一張放大檢查圖。"""
     items = [(n, f['rows']) for n, fs in frames_by_name.items() for f in fs]

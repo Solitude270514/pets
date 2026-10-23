@@ -3,8 +3,9 @@
 需要的檔案（副檔名 jpg/png/webp 都可以）：
     art/<品種>/sheet.*        一張圖、兩排三列共 6 個姿勢：站、坐、睡 / 吃、便便、伸懶腰
     art/<品種>/walk_sheet.*   一排 4 格走路分解圖
-    art/<品種>/import.json    （選用）{"flip": ["stand", ...], "walkFlip": false}
+    art/<品種>/import.json    （選用）{"flip": ["stand", ...], "walkFlip": false, "walkLegsOnly": false}
                               Gemini 畫成面向右邊的姿勢列在 flip，匯入時會翻成面向左（程式假設都面向左）
+                              walkLegsOnly：走路各格的頭轉向不一致時設 true，只保留各格的腿、上半身都用第 1 格
 
 做的事：
     1. 從兩張圖的前景顏色自動找出 12 色調色盤（sprites/<品種>/palette.json）
@@ -79,6 +80,10 @@ def main():
         if abs(factor - 1) > .08:
             print(f'走路圖比動作表 {"大" if factor < 1 else "小"}，縮放 ×{factor:.2f}')
             walk_frames = [ex.make_frame(ex.resize_rows(f['rows'], factor)) for f in walk_frames]
+
+    if opts.get('walkLegsOnly') and len(walk_frames) > 1:
+        walk_frames = ex.legs_only(walk_frames, opts.get('walkSplit', 0.62))
+        print('走路圖：只換腿（上半身都用第 1 格）')
 
     poses = dict(zip(SHEET_POSES, ([f] for f in sheet_frames)))
     poses['walk'] = walk_frames

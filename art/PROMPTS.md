@@ -8,7 +8,7 @@
 |---|---|
 | `sheet.jpg`（或 .png/.webp） | 動作表：兩排三列共 6 個姿勢 |
 | `walk_sheet.jpg` | 走路分解圖：一排 4 格 |
-| `import.json`（選用） | `{"flip": ["stand", ...], "walkFlip": false}`：Gemini 畫成**面向右邊**的姿勢列在 `flip`，匯入時翻成面向左 |
+| `import.json`（選用） | `{"flip": ["stand", ...], "walkFlip": false, "walkLegsOnly": false}`：Gemini 畫成**面向右邊**的姿勢列在 `flip`，匯入時翻成面向左；走路各格的頭轉向不一致（走起來一卡一卡）時，`walkLegsOnly` 設 `true`，只保留各格的腿 |
 
 品種代號：`shiba`（柴犬）、`corgi`（柯基）、`golden`（黃金獵犬）、`husky`（哈士奇）、`dachshund`（短毛臘腸）。
 
