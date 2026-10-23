@@ -36,6 +36,9 @@ namespace DobyPet
         public int MouthX, MouthY, RearX, RearY, BowlX, PoopRear, Peek;
         public int[] Icon;
 
+        /// <summary>給 WPF 下拉選單顯示用（DisplayMemberPath 只認得屬性，認不得欄位）。</summary>
+        public string DisplayName => Name;
+
         public int StandW => Poses["stand"][0].Rows[0].Length;
         public int StandH => Poses["stand"][0].Rows.Length;
     }

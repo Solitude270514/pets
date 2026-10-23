@@ -191,7 +191,7 @@ namespace DobyPet
             return Icon.FromHandle(bmp.GetHicon());
         }
 
-        void OpenSettings()
+        public void OpenSettings()
         {
             string oldCode = cfg.FriendCode;
             var w = new SettingsWindow(cfg);

@@ -15,6 +15,8 @@ namespace DobyPet
         public string Name { get; set; } = "小黑";
         public string Breed { get; set; } = Breeds.Default;
         public string Coat { get; set; }
+        /// <summary>一格像素在螢幕上佔幾個實體像素（2=小、3=中、4=大）。</summary>
+        public int Size { get; set; }
     }
 
     /// <summary>使用者設定，存在 %AppData%\DobyPet\settings.json。</summary>
@@ -29,7 +31,7 @@ namespace DobyPet
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string Name { get; set; }
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string Coat { get; set; }
 
-        /// <summary>一格像素在螢幕上佔幾個實體像素（2=小、3=中、4=大）。</summary>
+        /// <summary>預設大小：沒設定大小的狗（v0.5 以前的設定）與朋友的舊版狗用這個。</summary>
         public int PixelScale { get; set; } = 2;
         public bool AutoStart { get; set; }
         public bool DoNotDisturb { get; set; }
@@ -93,6 +95,7 @@ namespace DobyPet
                 var b = Breeds.Get(p.Breed);
                 if (p.Breed != b.Id) { p.Breed = b.Id; dirty = true; }
                 if (p.Coat == null || !b.Coats.ContainsKey(p.Coat)) { p.Coat = b.DefaultCoat; dirty = true; }
+                if (p.Size is < 2 or > 4) { p.Size = s.PixelScale is >= 2 and <= 4 ? s.PixelScale : 2; dirty = true; }   // 舊版只有全域大小
             }
             if (s.Pets.Count > MaxPets) { s.Pets = s.Pets.Take(MaxPets).ToList(); dirty = true; }
             if (dirty) s.Save();

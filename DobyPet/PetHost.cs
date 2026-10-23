@@ -38,7 +38,7 @@ namespace DobyPet
         ItemWindow slipper;
         CallOverlay overlay;
 
-        double last, checkTimer, topmostTimer, ground, scale = 2;
+        double last, checkTimer, topmostTimer, ground, dpi = 1, guestScale = 2;
         bool hiddenForFullscreen, ownerAway;
         System.Drawing.Point? lastSetCursor;
 
@@ -100,8 +100,8 @@ namespace DobyPet
         {
             var dog = new Dog { Config = pc, Bank = new SpriteBank(Breeds.Get(pc.Breed), pc.Coat) };
             dog.Pet = new PetController(dog.Bank, demo) { DoNotDisturb = cfg.DoNotDisturb, Mischief = cfg.Mischief };
-            dog.Pet.PoopDropped += SpawnPoop;
-            dog.Pet.SlipperDropped += SpawnSlipper;
+            dog.Pet.PoopDropped += x => SpawnPoop(x, ScaleOf(dog));   // 便便、拖鞋跟著這隻狗的大小
+            dog.Pet.SlipperDropped += x => SpawnSlipper(x, ScaleOf(dog));
             dog.Pet.CanPoop = () => poops.Count < 3 + Dogs.Count;
             dog.Pet.CanFetchSlipper = () => slipper == null;
             dog.Win = new DogWindow(dog.Pet, pc.Name, () => Now);
@@ -173,7 +173,10 @@ namespace DobyPet
             if (guestWin != null) yield return guestWin;
         }
 
-        void Setup(PetController p)
+        /// <summary>這隻狗的像素倍率換算成 DIP（每隻狗可以設定不同大小）。</summary>
+        double ScaleOf(Dog d) => (d.Config.Size is >= 2 and <= 4 ? d.Config.Size : cfg.PixelScale) / dpi;
+
+        void Setup(PetController p, double scale)
         {
             var wa = SystemParameters.WorkArea;
             p.Scale = scale;
@@ -187,18 +190,21 @@ namespace DobyPet
         public void ApplyScale()
         {
             if (Dogs.Count == 0) return;
-            scale = cfg.PixelScale / Dogs[0].Win.DpiScale;
+            dpi = Dogs[0].Win.DpiScale;
             ground = SystemParameters.WorkArea.Bottom;
-            foreach (var p in AllPets())
+            foreach (var d in Dogs)
             {
-                Setup(p);
-                if (p.State is not (PetState.Offscreen or PetState.Peek or PetState.PeekHide or PetState.Walk))
-                    p.X = Math.Max(p.MinX, Math.Min(p.MaxX, p.X));
+                double s = ScaleOf(d);
+                Setup(d.Pet, s);
+                if (d.Pet.State is not (PetState.Offscreen or PetState.Peek or PetState.PeekHide or PetState.Walk))
+                    d.Pet.X = Math.Max(d.Pet.MinX, Math.Min(d.Pet.MaxX, d.Pet.X));
+                d.Win.ApplyScale(s);
+                d.Win.Ground = ground;
+                d.Bowl?.ApplyScale(s, ground);
             }
-            foreach (var w in AllWindows()) { w.ApplyScale(scale); w.Ground = ground; }
-            foreach (var p in poops) p.ApplyScale(scale, ground);
-            foreach (var d in Dogs) d.Bowl?.ApplyScale(scale, ground);
-            slipper?.ApplyScale(scale, ground);
+            if (guestPet != null) { Setup(guestPet, guestScale); guestWin.ApplyScale(guestScale); guestWin.Ground = ground; }
+            foreach (var p in poops) p.ApplyScale(p.Scale, ground);
+            slipper?.ApplyScale(slipper.Scale, ground);
         }
 
         // ── 主迴圈 ─────────────────────────────────
@@ -268,11 +274,10 @@ namespace DobyPet
                 foreach (var d in Dogs) d.Pet.SetOwnerAway(ownerAway, cursor.X);
 
                 // 咬游標：你停下滑鼠 2.5 秒以上、游標在某隻狗附近的工作列上方，偶爾會發生
-                if (cfg.StealCursor && idle > 2.5 && idle < 60 && !ownerAway && rng.NextDouble() < .03
-                    && cursor.Y > ground - 90 * scale && cursor.Y < ground)
+                if (cfg.StealCursor && idle > 2.5 && idle < 60 && !ownerAway && rng.NextDouble() < .03 && cursor.Y < ground)
                 {
                     var near = Dogs.Where(d => Math.Abs(cursor.X - d.Pet.X) < 300).OrderBy(d => Math.Abs(cursor.X - d.Pet.X)).FirstOrDefault();
-                    near?.Pet.TryStealCursor(cursor.X);
+                    if (near != null && cursor.Y > ground - 90 * ScaleOf(near)) near.Pet.TryStealCursor(cursor.X);
                 }
             }
 
@@ -365,7 +370,7 @@ namespace DobyPet
                 double off = (120 + rng.NextDouble() * 160) * (rng.Next(2) == 0 ? -1 : 1);
                 double x = d.Pet.X + off;
                 if (x < d.Pet.MinX + 40 || x > d.Pet.MaxX - 40) x = d.Pet.X - off;
-                d.Bowl = new ItemWindow(ItemKind.Bowl, x, scale, ground);
+                d.Bowl = new ItemWindow(ItemKind.Bowl, x, ScaleOf(d), ground);
                 d.Bowl.Show();
                 d.FeedPending = true;
             }
@@ -377,7 +382,7 @@ namespace DobyPet
             d.Bowl = null;
         }
 
-        void SpawnPoop(double x)
+        void SpawnPoop(double x, double scale)
         {
             var p = new ItemWindow(ItemKind.Poop, x, scale, ground);
             p.Cleaned += item =>
@@ -389,7 +394,7 @@ namespace DobyPet
             p.Show();
         }
 
-        void SpawnSlipper(double x)
+        void SpawnSlipper(double x, double scale)
         {
             if (slipper != null) return;
             slipper = new ItemWindow(ItemKind.Slipper, x, scale, ground);
@@ -406,7 +411,7 @@ namespace DobyPet
             {
                 var list = target != null ? new[] { target } : Dogs.ToArray();
                 for (int i = 0; i < list.Length; i++)
-                    list[i].Pet.ComeTo(x + (i - (list.Length - 1) / 2.0) * 45 * scale);   // 好幾隻時並排站
+                    list[i].Pet.ComeTo(x + (i - (list.Length - 1) / 2.0) * 45 * ScaleOf(list[i]));   // 好幾隻時並排站
             });
             overlay.Closed += (_, __) => overlay = null;
             overlay.Show();
@@ -530,7 +535,7 @@ namespace DobyPet
             dog.Pet.WalkToEdge(right: true, () =>
             {
                 visitId = Guid.NewGuid().ToString("N")[..10];
-                link.Send(new FriendMsg { T = "visit-req", Id = visitId, Name = dog.Name, Coat = dog.Bank.Coat, Breed = dog.Bank.Breed.Id });
+                link.Send(new FriendMsg { T = "visit-req", Id = visitId, Name = dog.Name, Coat = dog.Bank.Coat, Breed = dog.Bank.Breed.Id, Size = dog.Config.Size });
                 vphase = VisitPhase.Waiting;
                 vTimer = 6;
             });
@@ -584,14 +589,15 @@ namespace DobyPet
             guestVisitId = m.Id;
             var gbank = new SpriteBank(Breeds.Get(m.Breed), m.Coat);   // 不認得的品種（對方版本較新）就用杜賓代替
             guestPet = new PetController(gbank) { Scripted = true, Mischief = false };
-            Setup(guestPet);
+            guestScale = (m.Size is >= 2 and <= 4 ? m.Size : cfg.PixelScale) / dpi;   // 朋友那邊設定的大小
+            Setup(guestPet, guestScale);
             guestPet.X = guestPet.HiddenX(false);
-            guestPet.PoopDropped += SpawnPoop;
+            guestPet.PoopDropped += x => SpawnPoop(x, guestScale);
             guestPet.CanPoop = () => poops.Count < 3 + Dogs.Count;
 
             guestWin = new DogWindow(guestPet, $"{guestName}（來作客）", () => Now) { Ground = ground };
             guestWin.ContextMenuRequested += () => ContextMenuRequested?.Invoke(null);
-            guestWin.SourceInitialized += (_, __) => guestWin.ApplyScale(scale);
+            guestWin.SourceInitialized += (_, __) => guestWin.ApplyScale(guestScale);
             guestWin.Show();
 
             director = new VisitDirector(hostDog.Pet, guestPet, () => Now);

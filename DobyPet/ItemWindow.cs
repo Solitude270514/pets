@@ -22,6 +22,7 @@ namespace DobyPet
         double scale, ground, cleanT = -1;
 
         public readonly double X;
+        public double Scale => scale;
         public event Action<ItemWindow> Cleaned;
 
         public ItemWindow(ItemKind kind, double x, double scale, double ground)

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -5,33 +6,47 @@ using System.Windows.Controls;
 
 namespace DobyPet
 {
-    /// <summary>設定視窗：我的狗狗（新增、移除、名字、品種、毛色）、大小、搗蛋、朋友配對碼、開機與更新。</summary>
+    /// <summary>設定視窗：我的狗狗（新增、移除、名字、品種、毛色、大小）、搗蛋、朋友配對碼、開機與更新。</summary>
     public sealed class SettingsWindow : Window
     {
         readonly List<PetConfig> pets;
         readonly ListBox list = new() { Height = 96 };
         readonly TextBox name = new() { MaxLength = 12 };
-        readonly ComboBox breed = new() { DisplayMemberPath = "Name" };
+        readonly ComboBox breed = new() { DisplayMemberPath = nameof(Breed.DisplayName) };
         readonly ComboBox coat = new();
+        readonly ComboBox size = new();
+        readonly Button dice = new() { Content = "🎲", Width = 26, Margin = new Thickness(4, 0, 0, 0), ToolTip = "換一個隨機名字" };
+        readonly Random rng = new();
         readonly Button add = new() { Content = "＋ 新增", Margin = new Thickness(0, 0, 0, 6) };
         readonly Button remove = new() { Content = "－ 移除" };
         bool loading;
 
         PetConfig Current => list.SelectedIndex >= 0 ? pets[list.SelectedIndex] : null;
 
-        static readonly string[] DefaultNames = { "小黑", "小白", "阿福", "麻糬", "豆豆", "旺財" };
+        static readonly (int px, string label)[] Sizes = { (2, "小"), (3, "中"), (4, "大") };
+
+        /// <summary>新增狗狗時隨機挑一個沒用過的名字。</summary>
+        static readonly string[] NamePool =
+        {
+            "麻糬", "布丁", "湯圓", "黑糖", "奶茶", "豆豆", "可樂", "芝麻", "饅頭", "球球", "皮蛋", "年糕",
+            "花生", "雪球", "糖糖", "阿福", "旺財", "小虎", "毛毛", "咖啡", "可可", "蛋捲", "飯糰", "泡芙",
+            "肉鬆", "豆花", "米香", "仙草", "QQ", "Lucky", "Momo", "Coco", "Lucy", "Max",
+        };
+
+        string RandomName() =>
+            NamePool.Where(n => pets.All(p => p.Name != n)).OrderBy(_ => rng.Next()).FirstOrDefault() ?? $"狗狗{pets.Count + 1}";
 
         public SettingsWindow(Settings cfg)
         {
             Title = "小杜賓設定";
-            Width = 380;
+            Width = 470;
             SizeToContent = SizeToContent.Height;
             ResizeMode = ResizeMode.NoResize;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             Topmost = true;
 
             // 在副本上編輯，按儲存才寫回
-            pets = cfg.Pets.Select(p => new PetConfig { Id = p.Id, Name = p.Name, Breed = p.Breed, Coat = p.Coat }).ToList();
+            pets = cfg.Pets.Select(p => new PetConfig { Id = p.Id, Name = p.Name, Breed = p.Breed, Coat = p.Coat, Size = p.Size }).ToList();
             breed.ItemsSource = Breeds.All.Values.ToList();
 
             list.SelectionChanged += (_, __) => LoadCurrent();
@@ -45,11 +60,19 @@ namespace DobyPet
                 RefreshList();
             };
             coat.SelectionChanged += (_, __) => { if (!loading && Current != null && coat.SelectedItem is string c) { Current.Coat = c; RefreshList(); } };
+            size.ItemsSource = Sizes.Select(x => x.label).ToArray();
+            size.SelectionChanged += (_, __) => { if (!loading && Current != null && size.SelectedIndex >= 0) { Current.Size = Sizes[size.SelectedIndex].px; RefreshList(); } };
+            dice.Click += (_, __) => { if (Current != null) { Current.Name = RandomName(); LoadCurrent(); RefreshList(); } };
             add.Click += (_, __) =>
             {
-                var b = Breeds.Get(Breeds.Default);
-                string n = DefaultNames.FirstOrDefault(d => pets.All(p => p.Name != d)) ?? $"狗狗{pets.Count + 1}";
-                pets.Add(new PetConfig { Name = n, Breed = b.Id, Coat = b.CoatNames[pets.Count % b.CoatNames.Length] });
+                // 新來的狗：隨機名字、隨機品種與毛色，大小跟第一隻一樣
+                var all = Breeds.All.Values.ToList();
+                var b = all[rng.Next(all.Count)];
+                pets.Add(new PetConfig
+                {
+                    Name = RandomName(), Breed = b.Id, Coat = b.CoatNames[rng.Next(b.CoatNames.Length)],
+                    Size = pets.Count > 0 ? pets[0].Size : cfg.PixelScale,
+                });
                 RefreshList();
                 list.SelectedIndex = pets.Count - 1;
             };
@@ -62,12 +85,6 @@ namespace DobyPet
                 list.SelectedIndex = System.Math.Min(i, pets.Count - 1);
             };
 
-            var sizes = new[] { (2, "小"), (3, "中"), (4, "大") };
-            var size = new ComboBox
-            {
-                ItemsSource = sizes.Select(s => s.Item2).ToArray(),
-                SelectedIndex = System.Math.Max(0, System.Array.FindIndex(sizes, s => s.Item1 == cfg.PixelScale)),
-            };
             var mischief = new CheckBox { Content = "允許搗蛋（從螢幕邊偷看、叼拖鞋）", IsChecked = cfg.Mischief, Margin = new Thickness(0, 12, 0, 0) };
             var steal = new CheckBox { Content = "允許咬走游標（只在你停下滑鼠時）", IsChecked = cfg.StealCursor, Margin = new Thickness(0, 6, 0, 0) };
 
@@ -94,10 +111,9 @@ namespace DobyPet
             var cancel = new Button { Content = "取消", IsCancel = true, Width = 80 };
             ok.Click += (_, __) =>
             {
-                for (int i = 0; i < pets.Count; i++)
-                    if (string.IsNullOrWhiteSpace(pets[i].Name)) pets[i].Name = DefaultNames[i % DefaultNames.Length];
+                foreach (var p in pets)
+                    if (string.IsNullOrWhiteSpace(p.Name)) p.Name = RandomName();
                 cfg.Pets = pets;
-                cfg.PixelScale = sizes[size.SelectedIndex].Item1;
                 cfg.Mischief = mischief.IsChecked == true;
                 cfg.StealCursor = steal.IsChecked == true;
                 cfg.FriendCode = FriendLink.NormalizeCode(code.Text);
@@ -121,11 +137,8 @@ namespace DobyPet
             panel.Children.Add(listRow);
 
             var editor = new Grid { Margin = new Thickness(0, 4, 0, 0) };
-            editor.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
-            editor.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
-            editor.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
-            editor.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
-            editor.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
+            foreach (var w in new[] { 3.0, 0, 2.4, 0, 2.2, 0, 1.4 })   // 名字、品種、毛色、大小，中間 8px 間隔
+                editor.ColumnDefinitions.Add(new ColumnDefinition { Width = w == 0 ? new GridLength(8) : new GridLength(w, GridUnitType.Star) });
             void Cell(int col, string label, FrameworkElement c)
             {
                 var sp = new StackPanel();
@@ -134,12 +147,16 @@ namespace DobyPet
                 Grid.SetColumn(sp, col);
                 editor.Children.Add(sp);
             }
-            Cell(0, "名字", name);
+            var nameRow = new DockPanel();
+            DockPanel.SetDock(dice, Dock.Right);
+            nameRow.Children.Add(dice);
+            nameRow.Children.Add(name);
+            Cell(0, "名字", nameRow);
             Cell(2, "品種", breed);
             Cell(4, "毛色", coat);
+            Cell(6, "大小", size);
             panel.Children.Add(editor);
 
-            Row("大小", size);
             panel.Children.Add(mischief);
             panel.Children.Add(steal);
             Row("朋友配對碼", codeRow);
@@ -163,7 +180,7 @@ namespace DobyPet
             loading = true;
             list.Items.Clear();
             foreach (var p in pets)
-                list.Items.Add($"{(string.IsNullOrWhiteSpace(p.Name) ? "（未命名）" : p.Name)}　{Breeds.Get(p.Breed).Name}・{p.Coat}");
+                list.Items.Add($"{(string.IsNullOrWhiteSpace(p.Name) ? "（未命名）" : p.Name)}　{Breeds.Get(p.Breed).Name}・{p.Coat}・{Sizes.FirstOrDefault(x => x.px == p.Size).label ?? "小"}");
             list.SelectedIndex = System.Math.Min(sel, pets.Count - 1);
             loading = false;
             add.IsEnabled = pets.Count < Settings.MaxPets;
@@ -179,6 +196,7 @@ namespace DobyPet
             breed.SelectedItem = b;
             coat.ItemsSource = b.CoatNames;
             coat.SelectedItem = Current.Coat;
+            size.SelectedIndex = System.Math.Max(0, System.Array.FindIndex(Sizes, x => x.px == Current.Size));
             loading = false;
         }
     }

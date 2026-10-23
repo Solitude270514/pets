@@ -15,6 +15,7 @@ namespace DobyPet
     ///   --present      一律當作主人在電腦前，不做閒置偵測（測試用）
     ///   --trick X      每 15 秒表演一次指定動作：peek / slipper / fart / backflip（測試用）
     ///   --update-now   啟動就檢查更新，有新版立刻安裝（測試用）
+    ///   --settings     啟動就打開設定視窗（測試用）
     ///   --updated      由自動更新重新啟動時帶入：等舊程序結束、清掉舊檔、跳出「已更新」通知
     /// </summary>
     public partial class App : Application
@@ -47,6 +48,7 @@ namespace DobyPet
             tray = new Tray(host, cfg, justUpdated: updated, updateNow: e.Args.Contains("--update-now"));
 
             if (e.Args.Contains("--call")) Dispatcher.BeginInvoke(() => host.CallOver(null));
+            if (e.Args.Contains("--settings")) Dispatcher.BeginInvoke(tray.OpenSettings);
             int ti = Array.IndexOf(e.Args, "--trick");
             if (ti >= 0 && ti + 1 < e.Args.Length)
             {
