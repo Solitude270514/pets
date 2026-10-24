@@ -25,7 +25,7 @@ import extract as ex
 sys.stdout.reconfigure(encoding='utf-8')
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 SHEET_POSES = ['stand', 'sit', 'sleep', 'eat', 'poop', 'stretch']
-NAMES = {'shiba': '柴犬', 'corgi': '柯基', 'golden': '黃金獵犬', 'husky': '哈士奇', 'dachshund': '臘腸'}
+NAMES = {'shiba': '柴犬', 'corgi': '柯基', 'golden': '黃金獵犬', 'husky': '哈士奇', 'dachshund': '臘腸', 'poodle': '大貴賓'}
 
 
 def find(folder, stem):

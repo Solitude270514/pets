@@ -10,7 +10,7 @@
 | `walk_sheet.jpg` | 走路分解圖：一排 4 格 |
 | `import.json`（選用） | `{"flip": ["stand", ...], "walkFlip": false, "walkLegsOnly": false}`：Gemini 畫成**面向右邊**的姿勢列在 `flip`，匯入時翻成面向左；走路各格的頭轉向不一致（走起來一卡一卡）時，`walkLegsOnly` 設 `true`，只保留各格的腿 |
 
-品種代號：`shiba`（柴犬）、`corgi`（柯基）、`golden`（黃金獵犬）、`husky`（哈士奇）、`dachshund`（短毛臘腸）。
+品種代號：`shiba`（柴犬）、`corgi`（柯基）、`golden`（黃金獵犬）、`husky`（哈士奇）、`dachshund`（短毛臘腸）、`poodle`（大貴賓）。
 
 ### 第 1 張：動作表
 
@@ -66,6 +66,7 @@ Background: one flat solid magenta color (#FF00FF) only — no scenery, no shado
 - **黃金獵犬 golden**：`a Golden Retriever puppy with a soft wavy golden coat, floppy ears, a gentle happy face, feathered fur on the chest and legs, and a fluffy feathered tail.`
 - **哈士奇 husky**：`a Siberian Husky puppy with a grey-and-white coat, a white face with the classic dark mask pattern, bright blue eyes, upright triangular ears, and a fluffy tail curled over its back.`
 - **短毛臘腸 dachshund**：`a smooth short-haired Dachshund puppy with a very long body and very short legs, long floppy ears, a long muzzle, a shiny reddish-brown coat, and a long thin tail.`
+- **大貴賓 poodle**：`a Standard Poodle puppy with a curly, fluffy apricot coat in a cute puppy clip: a round fluffy topknot on the head, long fluffy curly ears, a slim muzzle, a curly body, slender legs with fluffy pom-pom paws, and a fluffy pom-pom tail held up. The curls are drawn with clear lighter and darker shading.`
 
 ### 檢查重點（不合格就重生）
 - 動作表剛好 **6 隻**，排成 2 排 × 3 列，**彼此沒有碰在一起**，順序對（站、坐、睡 / 吃、便便、伸懶腰）
