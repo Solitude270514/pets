@@ -148,6 +148,14 @@ art/<品種>/*.jpg ──tools/extract.py──▶ sprites/<品種>/*.json ─�
 4. 在 `tools/make_coats.py` 指定哪些顏色代號是毛色、要哪些毛色，執行 `python tools/make_coats.py <品種>` 產生毛色變化（保留明暗層次，只換毛的顏色）。
 5. 打開 `preview.html`（需要本機伺服器）或 `preview_standalone.html` 看動畫效果。
 
+**像素編輯器**：想手動微調某個姿勢（例如走路時腳的位置），執行
+
+```bash
+python tools/editor.py
+```
+
+瀏覽器會打開編輯器：選品種、姿勢、第幾格，用畫筆、橡皮擦、吸管、油漆桶、框選移動來修改，有洋蔥皮可以疊上第 1 格對照，右下角即時播放動畫，也能切換毛色預覽。存檔會寫回 `sprites/<品種>/`，按「套用到程式」合併進程式資料，再重新建置 DobyPet 即可。手動改過的姿勢記在 `sprites/<品種>/manual.json`，之後重新匯入時不會被蓋掉（要重新產生加 `--force`）。
+
 **逐張版**：每個姿勢一張圖，在 `sprites/<品種>/` 下逐張執行 `python ../../tools/extract.py ../../art/<品種>/sit.jpg sit --palette palette.json`（走路圖加 `--rows2`），再手寫 `meta.json` 並執行 `python tools/build_js.py`。缺姿勢的品種會被略過。
 
 `meta.json` 欄位（座標都是站姿圖 `stand.json` 上的 `[x, y]` 或 `[y, x, 字母]`）：

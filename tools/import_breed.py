@@ -15,6 +15,7 @@
     5. 產生 sprites/<品種>/overview.png 總覽檢查圖，並執行 build_js.py
 
 用法：python tools/import_breed.py shiba
+      python tools/import_breed.py shiba --force   # 連用像素編輯器手動修改過的姿勢也重新產生
 """
 import sys, os, json, glob, subprocess
 import numpy as np
@@ -87,8 +88,19 @@ def main():
 
     poses = dict(zip(SHEET_POSES, ([f] for f in sheet_frames)))
     poses['walk'] = walk_frames
+
+    # 用像素編輯器（tools/editor.py）手動修改過的姿勢記在 manual.json，預設不覆蓋
+    manual_path = os.path.join(out, 'manual.json')
+    manual = json.load(open(manual_path, encoding='utf-8')) if os.path.exists(manual_path) else []
+    force = '--force' in sys.argv
     for n, fs in poses.items():
-        json.dump(fs, open(os.path.join(out, n + '.json'), 'w'))
+        path = os.path.join(out, n + '.json')
+        if n in manual and not force:
+            print(f'⚠ {n} 手動修改過，保留不覆蓋（要重新產生請加 --force）')
+            poses[n] = json.load(open(path))
+            continue
+        json.dump(fs, open(path, 'w'))
+    if force and os.path.exists(manual_path): os.remove(manual_path)
 
     # 4. meta.json（已存在就保留標好的位置與毛色；調色盤變了要再跑 make_coats.py）
     meta_path = os.path.join(out, 'meta.json')

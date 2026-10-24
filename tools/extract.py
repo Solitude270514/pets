@@ -209,13 +209,15 @@ def legs_only(frames, split=0.62):
     for f in frames[1:]:
         rows = f['rows']; h, w = len(rows), len(rows[0])
         m = np.array([[c != '.' for c in r] for r in rows])
-        # 找出這一格的上半身對到第 1 格的最佳位移：以腳底對齊為起點，左右搜尋幾格；
-        # 上下只容許 1 格，不然會被原本那格「低頭的側臉」帶偏，整隻狗變成上下跳
+        # 找出這一格對到第 1 格的最佳位移：只比對接縫上方那一段軀幹（不比頭，頭的轉向本來就不同，
+        # 拿頭來對會把腿帶到錯的位置，看起來前腳跟身體脫開）。以腳底對齊為起點，左右搜尋；
+        # 上下只容許 1 格，不然整隻狗會變成上下跳
+        band = range(max(0, cut - 14), cut)
         best, best_d = None, (0, h - bh)
         for dy in range(h - bh - 1, h - bh + 2):
-            for dx in range(-6, 7):
+            for dx in range(-10, 11):
                 score = 0
-                for y in range(cut):
+                for y in band:
                     ty = y + dy
                     if not 0 <= ty < h: continue
                     for x in range(bw):
