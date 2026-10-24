@@ -33,6 +33,7 @@ namespace DobyPet
         public Dictionary<string, List<Frame>> Poses;
         public (int y, int x, char c)[] Blink, Half;
         public (int r0, int r1, int c0, int c1, double amp)[] Tail;
+        public (int y, int x, char c)[] SniffMask;   // 把吃飯圖改成「低頭聞地板」要改的格子
         public int MouthX, MouthY, RearX, RearY, BowlX, PoopRear, Peek;
         public int[] Icon;
 
@@ -97,9 +98,44 @@ namespace DobyPet
                 b.PoopRear = I("poopRear", b.Poses["poop"][0].Rows[0].Length / 2);
                 b.Peek = I("peek", (int)(w * .42));
                 b.Icon = m.TryGetProperty("icon", out var ic) ? ic.EnumerateArray().Select(v => v.GetInt32()).ToArray() : new[] { 0, 0, Math.Min(w, h) / 2 };
+                b.SniffMask = SniffMask(b);
                 all[b.Id] = b;
             }
             return all;
+        }
+
+        /// <summary>
+        /// 吃飯圖裡的狗碗在嘴巴前方的地上：找出碗（偏藍的像素）的範圍，連同上面的飼料一起挖掉，
+        /// 被切開的地方補上輪廓線，就變成鼻子貼地在聞的樣子。以預設毛色判斷，換毛色不影響碗的顏色。
+        /// </summary>
+        static (int, int, char)[] SniffMask(Breed b)
+        {
+            var rows = b.Poses["eat"][0].Rows;
+            var pal = b.Coats[b.DefaultCoat];
+            int h = rows.Length, w = rows[0].Length;
+            uint Col(char ch) => ch != '.' && (pal.TryGetValue(ch, out var c) || Palettes.Fx.TryGetValue(ch, out c)) ? c : 0;
+            static int Sum(uint c) => (int)(c >> 16 & 255) + (int)(c >> 8 & 255) + (int)(c & 255);
+            static bool Blue(uint c) => c != 0 && (c & 255) > (c >> 16 & 255) + 30 && (c & 255) >= (c >> 8 & 255);
+
+            int x0 = w, x1 = -1, top = h;
+            for (int y = h * 3 / 5; y < h; y++)
+                for (int x = 0; x < w / 2; x++)
+                    if (Blue(Col(rows[y][x]))) { x0 = Math.Min(x0, x); x1 = Math.Max(x1, x); top = Math.Min(top, y); }
+            if (x1 < 0) return Array.Empty<(int, int, char)>();
+
+            x0--; x1++;
+            int cut = top - 3;   // 碗口上方幾格是飼料
+            bool Cut(int y, int x) => y >= cut && y < h && x >= x0 && x <= x1;
+            char outline = rows.SelectMany(r => r).Where(ch => Col(ch) != 0).OrderBy(ch => Sum(Col(ch))).First();
+
+            var mask = new List<(int, int, char)>();
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    if (Cut(y, x)) mask.Add((y, x, '.'));
+                    else if (Sum(Col(rows[y][x])) > 200 && (Cut(y + 1, x) || Cut(y, x - 1) || Cut(y, x + 1))) mask.Add((y, x, outline));
+                }
+            return mask.ToArray();
         }
     }
 
@@ -123,7 +159,8 @@ namespace DobyPet
         public static readonly string[] PuffS = { "..FF..", ".FFfF.", "FFFFFf", "FfFFFF", ".FFfF.", "..FF.." };
         public static readonly string[] PuffL = { "...FFFF...", ".FFFFfFFF.", "FFfFFFFFfF", "FFFFFFFFFF", "FFFFfFFFFF", ".FFfFFFFF.", "...FFFF..." };
         public static readonly string[] Spark = { "...Y...", "...Y...", ".YYYYY.", "YYYwYYY", ".YYYYY.", "...Y...", "...Y..." };
-        public static readonly string[] Zz = { "ZZZZZ", "...Z.", "..Z..", ".Z...", "ZZZZZ" };
+        public static readonly string[] Dust = { ".WW.", "WWWW", ".WW." };
+        public static readonly string[] Zz ={ "ZZZZZ", "...Z.", "..Z..", ".Z...", "ZZZZZ" };
         public static readonly string[] Poop = { "....KK.....", "...KqpK....", "..KKKKKK...", "..KpqppK...", ".KKKKKKKK..", ".KpppqppK..", "KKKKKKKKKK.", "KpqpppqppK.", "KKKKKKKKKK." };
         public static readonly string[] Bowl = { "..oooooo..", ".oooooooo.", "KUUUUUUUUK", ".KUwUUUUK.", "..KKKKKK.." };
         public static readonly string[] Slipper = { ".KKKK.....", "KPPPPKKKK.", "KPwwPPPPPK", "KKKKKKKKKK" };
@@ -176,6 +213,10 @@ namespace DobyPet
                 if (blink) foreach (var (y, x, c) in Breed.Blink) Set(g, y, x, c);
                 if (half) foreach (var (y, x, c) in Breed.Half) Set(g, y, x, c);
             });
+
+        /// <summary>低頭聞地板：吃飯圖去掉狗碗。</summary>
+        public PixImage Sniff() =>
+            Get("sniff", Breed.Poses["eat"][0].Rows, g => { foreach (var (y, x, c) in Breed.SniffMask) Set(g, y, x, c); });
 
         PixImage Get(string key, string[] rows, Action<char[][]> mod)
         {

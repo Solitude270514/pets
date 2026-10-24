@@ -16,7 +16,7 @@
     <Copyright>© 2026 Alex</Copyright>
     <RepositoryUrl>https://github.com/Solitude270514/pets</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <Version>0.5.3</Version>
+    <Version>0.6.0</Version>
   </PropertyGroup>
 
   <ItemGroup>

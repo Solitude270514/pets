@@ -6,6 +6,7 @@ namespace DobyPet
     {
         Idle, Walk, Sit, Sleep, Stretch, Eat, Poop, Proud, Happy, Petted, Backflip, Fart, Dragged, Falling, Land,
         Peek, PeekHide, Offscreen, Shake, Steal, Faint,
+        ChaseTail, Dizzy, Pant, Sniff, ShakeOff,
     }
 
     /// <summary>
@@ -47,6 +48,13 @@ namespace DobyPet
         double peekFrom, peekTo, stealDir;
         Action afterOffscreen;
 
+        // 小行為
+        double spin;                    // 追尾巴轉到的角度
+        bool zooming;                   // 暴衝中（跑更快、揚起灰塵）
+        double zoomHome, sniffTo;
+        bool rolled, shakeNext;         // 睡到一半翻過身了沒、睡醒要不要抖毛
+        double rollT = -9999, noticeT = -9999;   // 翻身、注意到游標的時間（毫秒，給畫面用）
+
         public bool Scripted;
 
         public event Action<double> PoopDropped;     // 參數：便便的 X
@@ -63,7 +71,7 @@ namespace DobyPet
 
         public SpriteBank Bank => bank;
 
-        void Enter(PetState s, double d = 0) { State = s; st = 0; dur = d; }
+        void Enter(PetState s, double d = 0) { State = s; st = 0; dur = d; rolled = false; }
 
         /// <summary>正在做不能被打斷的事。</summary>
         public bool Busy => State is PetState.Eat or PetState.Poop or PetState.Dragged or PetState.Falling
@@ -143,6 +151,26 @@ namespace DobyPet
                     if (st >= dur) Enter(PetState.Happy, 1.2);
                     break;
 
+                case PetState.ChaseTail:   // 原地繞小圈追尾巴，越轉越快
+                    spin += dt * (7 + st * 5);
+                    FacingRight = Math.Sin(spin) < 0;
+                    if (st >= dur) End();
+                    break;
+
+                case PetState.Sniff:   // 鼻子貼地，走一小步、停下來聞一聞
+                    if (st % 1.1 < .35)
+                    {
+                        double d = sniffTo - X, mv = 14 * Scale * dt;
+                        if (Math.Abs(d) > mv) { FacingRight = d > 0; X += Math.Sign(d) * mv; }
+                    }
+                    if (st >= dur) End();
+                    break;
+
+                case PetState.Sleep:   // 睡久了會翻身換一邊
+                    if (!rolled && dur >= 20 && st > dur / 2) { rolled = true; FacingRight = !FacingRight; rollT = lastT; }
+                    if (dur > 0 && st >= dur) End();
+                    break;
+
                 default:
                     if (dur > 0 && st >= dur) End();
                     break;
@@ -155,10 +183,17 @@ namespace DobyPet
             switch (State)
             {
                 case PetState.Sleep:
-                    Enter(PetState.Stretch, 1.8);
+                    WakeStretch();
                     break;
                 case PetState.Stretch:
-                    if (greetPending) Greet(); else Enter(PetState.Idle, 1.5);
+                    bool shake = shakeNext && rng.NextDouble() < .6;
+                    shakeNext = false;
+                    if (greetPending) Greet();
+                    else if (shake) Enter(PetState.ShakeOff, 1.3);   // 睡醒抖抖毛
+                    else Enter(PetState.Idle, 1.5);
+                    break;
+                case PetState.ChaseTail:   // 轉太多圈，有時候會頭暈
+                    if (rng.NextDouble() < .45) Enter(PetState.Dizzy, 2.4); else Enter(PetState.Happy, 1.2);
                     break;
                 case PetState.Eat:
                     poopTimer = demo ? 3 : 60 + rng.NextDouble() * 120;
@@ -207,7 +242,11 @@ namespace DobyPet
             if ((r -= pFlip) < 0) { Enter(PetState.Backflip, 2.8); return; }
             if ((r -= pPeek) < 0) { StartPeek(); return; }
             if ((r -= pSlipper) < 0) { StartSlipper(); return; }
-            if ((r -= 0.34) < 0) { WalkTo(RandomX()); return; }
+            if ((r -= 0.012) < 0) { StartChaseTail(); return; }
+            if ((r -= 0.01) < 0) { StartZoomies(); return; }
+            if ((r -= 0.012) < 0) { Enter(PetState.ShakeOff, 1.3); return; }
+            if ((r -= 0.06) < 0) { StartSniff(); return; }
+            if ((r -= 0.30) < 0) { WalkTo(RandomX()); return; }
             if ((r -= 0.22) < 0) { Enter(PetState.Idle, 3 + rng.NextDouble() * 4); return; }
             if ((r -= 0.18) < 0) { Enter(PetState.Sit, 6 + rng.NextDouble() * 12); return; }
             if ((r -= 0.06) < 0) { Enter(PetState.Sleep, 25 + rng.NextDouble() * 50); return; }
@@ -218,7 +257,7 @@ namespace DobyPet
         /// <summary>示範模式：依序展示每個動作（開發測試用）。</summary>
         void DemoNext()
         {
-            switch (demoStep++ % 10)
+            switch (demoStep++ % 14)
             {
                 case 0: WalkTo(RandomX()); break;
                 case 1: StartPeek(); break;
@@ -229,6 +268,10 @@ namespace DobyPet
                 case 6: Enter(PetState.Petted, 2); break;
                 case 7: Enter(PetState.Sit, 3); break;
                 case 8: Enter(PetState.Happy, 2); break;
+                case 9: StartChaseTail(); break;
+                case 10: StartZoomies(); break;
+                case 11: StartSniff(); break;
+                case 12: Enter(PetState.ShakeOff, 1.3); break;
                 default: Enter(PetState.Idle, 2); break;
             }
         }
@@ -265,9 +308,60 @@ namespace DobyPet
         {
             targetX = free ? x : Clamp(x);
             running = run;
+            zooming = false;
             speed = (run ? 75 : 24) * Scale;
             onArrive = arrive;
             Enter(PetState.Walk);
+        }
+
+        // ── 小行為 ───────────────────────────────
+
+        void WakeStretch() { shakeNext = true; Enter(PetState.Stretch, 1.8); }
+
+        void StartChaseTail() { spin = FacingRight ? Math.PI * 1.5 : Math.PI / 2; Enter(PetState.ChaseTail, 2.6 + rng.NextDouble() * 1.4); }
+
+        /// <summary>暴衝：突然在附近來回狂奔幾趟，跑完坐下喘氣。</summary>
+        void StartZoomies() { zoomHome = X; Zoom(3 + rng.Next(3), rng.Next(2) == 0); }
+
+        void Zoom(int left, bool right)
+        {
+            if (left == 0) { Enter(PetState.Pant, 4 + rng.NextDouble() * 3); return; }
+            double reach = (90 + rng.NextDouble() * 110) * Scale;
+            WalkTo(zoomHome + (right ? reach : -reach), () => Zoom(left - 1, !right), run: true);
+            zooming = true;
+            speed = 120 * Scale;
+        }
+
+        /// <summary>低頭沿著地板聞過去。</summary>
+        void StartSniff()
+        {
+            sniffTo = Clamp(X + (rng.Next(2) == 0 ? -1 : 1) * (40 + rng.NextDouble() * 80) * Scale);
+            Enter(PetState.Sniff, 4 + rng.NextDouble() * 4);
+        }
+
+        /// <summary>主人在附近動滑鼠：發呆或坐著時轉頭看游標，剛注意到會輕輕跳一下。</summary>
+        public void WatchCursor(double cursorX)
+        {
+            if (Scripted || State is not (PetState.Idle or PetState.Sit)) return;
+            if (Math.Abs(cursorX - X) < 12 * Scale) return;
+            bool right = cursorX > X;
+            if (right == FacingRight) return;
+            FacingRight = right;
+            if (State == PetState.Idle) noticeT = lastT;
+        }
+
+        /// <summary>游標停在附近不動：走過去聞一聞。</summary>
+        public bool TrySniffCursor(double cursorX)
+        {
+            if (Busy || Scripted || carrying || State is PetState.Sleep or PetState.Eat) return false;
+            bool left = cursorX < X;
+            WalkTo(cursorX + (left ? -MouthDx : MouthDx) * Scale, () =>
+            {
+                FacingRight = !left;
+                sniffTo = X;
+                Enter(PetState.Sniff, 2.2);
+            });
+            return true;
         }
 
         // ── 搗蛋 ─────────────────────────────────
@@ -336,7 +430,7 @@ namespace DobyPet
             if (State == PetState.Peek) { Enter(PetState.PeekHide, .3); return; }   // 被抓到偷看
             if (carrying) DropSlipper();
             if (Busy) return;
-            if (State == PetState.Sleep) { Enter(PetState.Stretch, 1.8); return; }
+            if (State == PetState.Sleep) { WakeStretch(); return; }
             Enter(PetState.Petted, 1.8);
         }
 
@@ -348,6 +442,10 @@ namespace DobyPet
         public void DoStretch() { if (!Busy) Enter(PetState.Stretch, 1.8); }
         public void DoPeek() { if (!Busy && !Scripted) StartPeek(); }
         public void DoSlipper() { if (!Busy && !Scripted && !carrying && CanFetchSlipper()) StartSlipper(); }
+        public void DoChaseTail() { if (!Busy && !Scripted) StartChaseTail(); }
+        public void DoZoomies() { if (!Busy && !Scripted) StartZoomies(); }
+        public void DoSniff() { if (!Busy && !Scripted) StartSniff(); }
+        public void DoShakeOff() { if (!Busy) Enter(PetState.ShakeOff, 1.3); }
 
         public void ComeTo(double x)
         {
@@ -411,7 +509,7 @@ namespace DobyPet
                 return;
             }
             greetX = cursorX;
-            if (State == PetState.Sleep) { greetPending = true; Enter(PetState.Stretch, 1.8); }
+            if (State == PetState.Sleep) { greetPending = true; WakeStretch(); }
             else if (!Busy) Greet();
         }
 
@@ -423,7 +521,7 @@ namespace DobyPet
 
         /// <summary>全螢幕程式開啟時：不顯示，讓牠安靜睡覺。</summary>
         public void ForceSleep() { if (State is not (PetState.Dragged or PetState.Falling or PetState.Offscreen)) Enter(PetState.Sleep, 0); }
-        public void WakeUp() { if (State == PetState.Sleep) Enter(PetState.Stretch, 1.8); }
+        public void WakeUp() { if (State == PetState.Sleep) WakeStretch(); }
 
         // ── 出門拜訪（第三階段） ─────────────────────
 
@@ -486,12 +584,12 @@ namespace DobyPet
         void Dog(PixImage img, double dx = 0, double dy = 0, double sx = 1, double sy = 1, double rot = 0, double? ax = null) =>
             s.Draw(img, gx + (FacingRight ? -dx : dx), gy + dy, FacingRight, sx, sy, FacingRight ? -rot : rot, ax);
 
-        void WalkFrame(double ms)
+        void WalkFrame(double ms, double dx = 0, double dy = 0)
         {
             int f = (int)(lastT / ms) % 4;
             var stand = bank.Info("stand");
             double ax = bank.Info("walk", f).Ax + (stand.Rows[0].Length / 2.0 - stand.Ax);
-            Dog(bank.Pose("walk", f), ax: ax);
+            Dog(bank.Pose("walk", f), dx: dx, dy: dy, ax: ax);
         }
 
         /// <summary>嘴裡的拖鞋（甩的時候會晃）。</summary>
@@ -504,6 +602,21 @@ namespace DobyPet
 
         double lastT;
 
+        /// <summary>身體中段最常見的顏色，當作毛色（抖毛飛出的毛屑用）。</summary>
+        static uint FurColor(PixImage img)
+        {
+            var n = new System.Collections.Generic.Dictionary<uint, int>();
+            for (int y = img.H * 2 / 5; y < img.H * 3 / 5; y++)
+                for (int x = img.W / 4; x < img.W * 3 / 4; x++)
+                {
+                    uint c = img.Px[y * img.W + x];
+                    if (c != 0) n[c] = n.TryGetValue(c, out var v) ? v + 1 : 1;
+                }
+            uint best = Palettes.Fx['W']; int most = 0;
+            foreach (var (c, v) in n) if (v > most) { best = c; most = v; }
+            return best;
+        }
+
         public void Render(Stage stage, double tms)
         {
             s = stage; gx = s.W / 2; gy = s.H; lastT = tms;
@@ -512,14 +625,75 @@ namespace DobyPet
             switch (State)
             {
                 case PetState.Idle:
-                    Dog(bank.Stand(WagAt(tms, 180), tms % 3400 < 150));
+                {
+                    double nk = tms - noticeT;   // 剛注意到游標：輕輕跳一下
+                    Dog(bank.Stand(WagAt(tms, 180), tms % 3400 < 150), dy: nk < 260 ? -Math.Round(Math.Sin(nk / 260 * Math.PI) * 3) : 0);
                     if (carrying) Slipper(tms, false);
                     break;
+                }
 
                 case PetState.Walk:
-                    WalkFrame(running ? 80 : 150);
+                    WalkFrame(zooming ? 55 : running ? 80 : 150);
                     if (carrying) Slipper(tms, false, (int)(tms / (running ? 80 : 150)) % 2);
+                    if (zooming)   // 後腳揚起灰塵
+                    {
+                        double p = tms % 330 / 330;
+                        FxAt("dust", FxArt.Dust, B.StandW / 2.0 - 2 + p * 8, gy - 4 - p * 4);
+                    }
                     break;
+
+                case PetState.ChaseTail:
+                {
+                    double c = Math.Cos(spin) * 5;   // 繞小圈：身體左右移動
+                    WalkFrame(60, FacingRight ? -c : c, -((int)(tms / 120) % 2));
+                    break;
+                }
+
+                case PetState.Dizzy:   // 轉到頭暈：搖搖晃晃，頭上轉星星
+                {
+                    Dog(bank.Stand(0, half: true), rot: Math.Sin(tms / 260) * .07);
+                    double a = tms / 160;
+                    for (int i = 0; i < 3; i++)
+                        FxAt("spark", FxArt.Spark, MouthDx + 4 + Math.Cos(a + i * 2.1) * 9, gy - B.StandH - 4 + Math.Sin(a + i * 2.1) * 3);
+                    break;
+                }
+
+                case PetState.Pant:   // 跑完坐著大口喘氣
+                    Dog(bank.Pose("sit"), sy: (int)(tms / 200) % 2 == 1 ? 1.03 : 1);
+                    break;
+
+                case PetState.Sniff:
+                {
+                    var img = bank.Sniff();
+                    bool moving = st % 1.1 < .35 && Math.Abs(sniffTo - X) > 1;
+                    Dog(img, dx: !moving && (int)(tms / 150) % 3 == 0 ? -1 : 0, dy: moving ? (int)(tms / 120) % 2 : 0);   // 停下來時鼻子一抽一抽
+                    if (!moving)
+                    {
+                        double p = tms % 700 / 700, nx = -img.W / 2.0 + B.BowlX;
+                        if (p < .5) Dot(nx - 2 - p * 6, gy - 2 - p * 6, Palettes.Fx['W']);
+                    }
+                    break;
+                }
+
+                case PetState.ShakeOff:   // 抖抖毛：全身左右甩，毛屑往外飛
+                {
+                    bool on = k < 900;
+                    int j = on ? ((int)(tms / 55) % 2 == 0 ? -1 : 1) : 0;
+                    var img = bank.Stand(on ? j : WagAt(tms, 140), blink: on);
+                    Dog(img, dx: j, sx: on ? 1.03 : 1, rot: j * .04);
+                    if (on)
+                    {
+                        uint fur = FurColor(img), edge = Palettes.Fx['x'];
+                        double p = k % 300 / 300;
+                        for (int i = 0; i < 5; i++)
+                        {
+                            double ang = i * 1.26 + Math.Floor(k / 300) * .7;
+                            double fx = Math.Cos(ang) * (B.StandW / 2.0 + p * 10), fy = gy - B.StandH * .55 - Math.Abs(Math.Sin(ang)) * (B.StandH * .4 + p * 8);
+                            Dot(fx, fy, fur); Dot(fx + 1, fy, fur); Dot(fx, fy + 1, edge); Dot(fx + 1, fy + 1, edge);
+                        }
+                    }
+                    break;
+                }
 
                 case PetState.Dragged:   // 被拎起來時四腳亂踢：用走路圖快速播放
                     WalkFrame(70);
@@ -534,7 +708,10 @@ namespace DobyPet
 
                 case PetState.Sleep:
                 {
-                    Dog(bank.Pose("sleep"), sy: (int)(tms / 1000) % 2 == 1 ? 1.03 : 1);
+                    double rk = tms - rollT, dk = tms % 9000;
+                    if (rk < 300) Dog(bank.Pose("sleep"), sx: 1.05, sy: .88);                                 // 翻身
+                    else if (dk < 700) Dog(bank.Pose("sleep"), dx: (int)(tms / 70) % 2, sy: 1.01);            // 做夢踢腳
+                    else Dog(bank.Pose("sleep"), sy: (int)(tms / 1000) % 2 == 1 ? 1.03 : 1);
                     double z = tms % 2600 / 2600;
                     FxAt("zz", FxArt.Zz, 12 + z * 6, gy - 40 - z * 14);
                     if (z > .5) FxAt("zz", FxArt.Zz, 10 + (z - .5) * 6, gy - 40 - (z - .5) * 14);

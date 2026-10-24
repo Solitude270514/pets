@@ -36,6 +36,10 @@ namespace DobyPet
             tricks.DropDownItems.Add("坐下", null, (_, __) => host.Each(target, p => p.DoSit()));
             tricks.DropDownItems.Add("睡覺", null, (_, __) => host.Each(target, p => p.DoSleep()));
             tricks.DropDownItems.Add("伸懶腰", null, (_, __) => host.Each(target, p => p.DoStretch()));
+            tricks.DropDownItems.Add("抖抖毛", null, (_, __) => host.Each(target, p => p.DoShakeOff()));
+            tricks.DropDownItems.Add("追尾巴", null, (_, __) => host.Each(target, p => p.DoChaseTail()));
+            tricks.DropDownItems.Add("暴衝", null, (_, __) => host.Each(target, p => p.DoZoomies()));
+            tricks.DropDownItems.Add("聞聞地板", null, (_, __) => host.Each(target, p => p.DoSniff()));
             tricks.DropDownItems.Add(new WF.ToolStripSeparator());
             tricks.DropDownItems.Add("從螢幕邊偷看", null, (_, __) => host.Each(target, p => p.DoPeek()));
             tricks.DropDownItems.Add("叼拖鞋", null, (_, __) => host.Each(target, p => p.DoSlipper()));

@@ -41,6 +41,8 @@ namespace DobyPet
         double last, checkTimer, topmostTimer, ground, dpi = 1, guestScale = 2;
         bool hiddenForFullscreen, ownerAway;
         System.Drawing.Point? lastSetCursor;
+        System.Drawing.Point lastCursor;
+        double cursorMovedAt = -99;
 
         // 家裡兩隻以上時，偶爾挑兩隻一起玩
         VisitDirector homePlay;
@@ -239,7 +241,20 @@ namespace DobyPet
             slipper?.Tick(tms, dt);
 
             UpdateCursorSteal();
+            WatchCursor();
             UpdateVisitTimers(dt);
+        }
+
+        /// <summary>你在狗狗附近動滑鼠時，發呆或坐著的狗會轉頭看游標。</summary>
+        void WatchCursor()
+        {
+            var cur = WF.Cursor.Position;
+            if (cur != lastCursor) { lastCursor = cur; cursorMovedAt = Now; }
+            if (Now - cursorMovedAt > 1.5 || hiddenForFullscreen) return;
+            var c = AnyWindow.CursorDip();
+            if (c.Y < ground - 250 || c.Y > ground + 60) return;
+            foreach (var d in Dogs)
+                if (Math.Abs(c.X - d.Pet.X) < 400) d.Pet.WatchCursor(c.X);
         }
 
         DogWindow AnyWindow => Dogs[0].Win;
@@ -273,11 +288,15 @@ namespace DobyPet
                 var cursor = AnyWindow.CursorDip();
                 foreach (var d in Dogs) d.Pet.SetOwnerAway(ownerAway, cursor.X);
 
-                // 咬游標：你停下滑鼠 2.5 秒以上、游標在某隻狗附近的工作列上方，偶爾會發生
-                if (cfg.StealCursor && idle > 2.5 && idle < 60 && !ownerAway && rng.NextDouble() < .03 && cursor.Y < ground)
+                // 你停下滑鼠 2.5 秒以上、游標在某隻狗附近的工作列上方：偶爾會走過去聞一聞，或咬走游標
+                if (idle > 2.5 && idle < 60 && !ownerAway && rng.NextDouble() < .03 && cursor.Y < ground)
                 {
                     var near = Dogs.Where(d => Math.Abs(cursor.X - d.Pet.X) < 300).OrderBy(d => Math.Abs(cursor.X - d.Pet.X)).FirstOrDefault();
-                    if (near != null && cursor.Y > ground - 90 * ScaleOf(near)) near.Pet.TryStealCursor(cursor.X);
+                    if (near != null && cursor.Y > ground - 90 * ScaleOf(near))
+                    {
+                        if (cfg.StealCursor && rng.NextDouble() < .6) near.Pet.TryStealCursor(cursor.X);
+                        else near.Pet.TrySniffCursor(cursor.X);
+                    }
                 }
             }
 
