@@ -89,7 +89,7 @@ def main():
     poses = dict(zip(SHEET_POSES, ([f] for f in sheet_frames)))
     poses['walk'] = walk_frames
 
-    # 用像素編輯器（tools/editor.py）手動修改過的姿勢記在 manual.json，預設不覆蓋
+    # 用像素編輯器（tools/editor/）手動修改過的姿勢記在 manual.json，預設不覆蓋
     manual_path = os.path.join(out, 'manual.json')
     manual = json.load(open(manual_path, encoding='utf-8')) if os.path.exists(manual_path) else []
     force = '--force' in sys.argv

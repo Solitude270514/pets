@@ -1,7 +1,8 @@
 """像素編輯器的本機伺服器：讀寫 sprites/<品種>/ 的姿勢檔，並提供編輯畫面 editor.html。
 
-用法：python tools/editor.py          （會自動開瀏覽器到 http://127.0.0.1:8770）
-      python tools/editor.py --no-open
+用法：雙擊同資料夾的「啟動像素編輯器.bat」，或
+      python tools/editor/editor.py          （會自動開瀏覽器到 http://127.0.0.1:8770）
+      python tools/editor/editor.py --no-open
 
 只綁定 127.0.0.1，別台電腦連不進來。存檔時會：
     - 重新計算對齊點（ax）、裁掉四周空白
@@ -12,11 +13,12 @@ import json, os, sys, subprocess, webbrowser, threading
 from urllib.parse import urlsplit
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(HERE))   # tools/，共用的 extract.py 在那裡
 import extract as ex
 
 sys.stdout.reconfigure(encoding='utf-8')
-ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+ROOT = os.path.abspath(os.path.join(HERE, '..', '..'))
 SPRITES = os.path.join(ROOT, 'sprites')
 POSES = ['stand', 'walk', 'sit', 'sleep', 'eat', 'poop', 'stretch']
 PORT = 8770
@@ -73,7 +75,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             path = urlsplit(self.path).path   # 去掉 ?breed=husky 這類參數
             if path in ('/', '/index.html'):
-                return self.send(200, open(os.path.join(ROOT, 'tools', 'editor.html'), 'rb').read(), 'text/html; charset=utf-8')
+                return self.send(200, open(os.path.join(HERE, 'editor.html'), 'rb').read(), 'text/html; charset=utf-8')
             if path == '/api/breeds':
                 items = []
                 for bid in sorted(os.listdir(SPRITES)):
@@ -106,9 +108,20 @@ class Handler(BaseHTTPRequestHandler):
             self.send(500, {'error': str(e)})
 
 
+class Server(ThreadingHTTPServer):
+    # Windows 預設允許兩個程式綁同一個埠，會變成開了兩份；關掉才偵測得到「已經在執行」
+    allow_reuse_address = False
+
+
 def main():
-    server = ThreadingHTTPServer(('127.0.0.1', PORT), Handler)
     url = f'http://127.0.0.1:{PORT}/'
+    try:
+        server = Server(('127.0.0.1', PORT), Handler)
+    except OSError:
+        # 已經開著一個了：直接開瀏覽器過去
+        print(f'像素編輯器已經在執行，開啟 {url}')
+        webbrowser.open(url)
+        return
     print(f'像素編輯器：{url}（按 Ctrl+C 結束）')
     if '--no-open' not in sys.argv:
         threading.Timer(.5, lambda: webbrowser.open(url)).start()

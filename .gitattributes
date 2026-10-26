@@ -3,6 +3,7 @@
 *.cs      text eol=crlf
 *.xaml    text eol=crlf
 *.csproj  text eol=crlf
+*.bat     text eol=crlf
 *.py      text eol=lf
 *.json    text eol=lf
 *.js      text eol=lf

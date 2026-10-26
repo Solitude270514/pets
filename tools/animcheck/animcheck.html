@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>動畫檢查器</title>
+<style>
+:root{--bg:#1e1c1b;--panel:#2a2725;--line:#3d3835;--ink:#f1e8de;--muted:#a69a8f;--accent:#e08a3c;--ok:#5fb36b;--warn:#e0b23c;--bad:#e0604c}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px "Microsoft JhengHei UI","Noto Sans TC",system-ui,sans-serif;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+header{display:flex;gap:10px;align-items:center;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+header h1{font-size:15px;margin:0 8px 0 0}
+select,button,input{font:inherit;color:var(--ink)}
+select,button,input[type=number]{background:#35302d;border:1px solid var(--line);border-radius:6px;padding:3px 8px}
+input[type=number]{width:64px}
+button{cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.on{background:var(--accent);border-color:var(--accent);color:#1e1c1b}
+button.primary{background:var(--accent);border-color:var(--accent);color:#1e1c1b;font-weight:600}
+button:disabled{opacity:.5;cursor:default}
+main{flex:1;display:flex;min-height:0}
+aside{width:300px;background:var(--panel);padding:12px;overflow:auto;display:flex;flex-direction:column;gap:14px;flex-shrink:0}
+aside.left{border-right:1px solid var(--line)}
+aside.right{border-left:1px solid var(--line);width:340px}
+aside h2{font-size:13px;color:var(--muted);margin:0 0 6px;font-weight:600}
+.center{flex:1;display:flex;flex-direction:column;min-width:0}
+#stageWrap{flex:1;overflow:auto;background:#151413;display:flex;align-items:center;justify-content:center;min-height:0}
+#stage{image-rendering:pixelated;margin:24px}
+.strip{display:flex;gap:8px;overflow-x:auto;padding:10px;background:var(--panel);border-top:1px solid var(--line);min-height:176px}
+.card{background:#35302d;border:2px solid var(--line);border-radius:8px;padding:6px;display:flex;flex-direction:column;gap:4px;align-items:center;min-width:120px;cursor:pointer}
+.card.sel{border-color:var(--accent)}
+.card.off{opacity:.45}
+.card.cur{box-shadow:0 0 0 2px var(--ok)}
+.card canvas{image-rendering:pixelated;background:repeating-conic-gradient(#4a4440 0 25%,#3a3532 0 50%) 0 0/8px 8px;max-width:110px;max-height:80px}
+.card .lbl{font-size:11px;color:var(--muted);max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card .btns{display:flex;gap:2px;flex-wrap:wrap;justify-content:center}
+.card .btns button{padding:0 5px;font-size:12px}
+.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.hint{font-size:12px;color:var(--muted);line-height:1.6}
+#drop{border:2px dashed var(--line);border-radius:8px;padding:12px;text-align:center;color:var(--muted);font-size:12px;cursor:pointer}
+#drop.over{border-color:var(--accent);color:var(--ink)}
+#picker{width:100%;height:150px;background:#35302d;border:1px solid var(--line);border-radius:6px;color:var(--ink)}
+.srcs{display:flex;flex-direction:column;gap:3px;margin-top:6px}
+.src{display:flex;gap:4px;align-items:center;font-size:12px;background:#35302d;border-radius:5px;padding:2px 4px}
+.src span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.src button{padding:0 5px;font-size:11px}
+#log{font-size:12px;color:var(--muted);white-space:pre-wrap;line-height:1.5}
+.verdict{font-size:16px;font-weight:700;padding:8px 10px;border-radius:8px}
+.lv0{color:var(--ok)}.lv1{color:var(--warn)}.lv2{color:var(--bad)}
+.verdict.lv0{background:#24382a}.verdict.lv1{background:#3d3420}.verdict.lv2{background:#40241f}
+table{border-collapse:collapse;width:100%;font-size:12px}
+th,td{padding:3px 4px;text-align:right;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--muted);font-weight:600}
+tr.click{cursor:pointer}
+tr.click:hover{background:#35302d}
+ul.tips{margin:0;padding-left:18px;font-size:13px;line-height:1.7}
+#diff{image-rendering:pixelated;background:#151413;border-radius:6px;max-width:100%}
+.legend span{display:inline-block;width:10px;height:10px;border-radius:2px;margin:0 3px 0 8px;vertical-align:middle}
+footer{padding:4px 12px;background:var(--panel);border-top:1px solid var(--line);font-size:12px;color:var(--muted);display:flex;gap:16px;flex-wrap:wrap}
+kbd{background:#35302d;border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:11px}
+#busy{display:none;color:var(--warn)}
+</style>
+</head>
+<body>
+<header>
+  <h1>🎞 動畫檢查器</h1>
+  <button id="run" class="primary">⚙ 重新處理</button>
+  <span id="busy">處理中…</span>
+  <span style="flex:1"></span>
+  <button id="play" class="on">⏸ 暫停</button>
+  <button id="prev" title=",">◀</button>
+  <button id="next" title=".">▶</button>
+  <label>每格 <input type="range" id="ms" min="40" max="500" value="150"> <span id="msv">150</span>ms</label>
+  <label><select id="mode"><option value="loop">循環 1→N→1</option><option value="pingpong">來回 1→N→1 反向</option></select></label>
+  <button id="gif">⬇ 存 GIF</button>
+  <button id="png">⬇ 存 PNG 條</button>
+</header>
+<main>
+  <aside class="left">
+    <section>
+      <h2>1. 選圖（依順序變成動畫格）</h2>
+      <div id="drop">把圖片拖進來，或點這裡選檔案<br>（可以多張，也可以是一張排好多格的圖）</div>
+      <input type="file" id="file" accept="image/*" multiple hidden>
+      <div class="row" style="margin-top:8px"><span class="hint">或從專案裡挑（Ctrl 可多選）：</span></div>
+      <select id="picker" multiple></select>
+      <div class="row" style="margin-top:6px"><button id="addPick">＋ 加入選取的圖</button><button id="clearSrc">清空</button></div>
+      <div class="srcs" id="srcs"></div>
+    </section>
+    <section>
+      <h2>2. 圖像前處理</h2>
+      <div class="row"><label>像素格 <select id="o_grid"><option value="auto">自動偵測</option><option value="manual">指定大小</option><option value="off">不偵測，直接縮小</option></select></label></div>
+      <div class="row" id="r_cell"><label>一格 <input type="number" id="o_cell" value="8" step="0.1" min="1"> px</label></div>
+      <div class="row" id="r_shrink"><label>縮小 <input type="number" id="o_shrink" value="4" step="1" min="1"> 倍</label></div>
+      <div class="row"><label>去背 <select id="o_bg"><option value="magenta">洋紅背景</option><option value="corner">角落顏色</option><option value="alpha">PNG 透明</option><option value="none">不去背</option></select></label></div>
+      <div class="row" id="r_tol"><label>容差 <input type="range" id="o_tol" min="10" max="160" value="60"> <span id="tolv">60</span></label></div>
+      <div class="row"><label>去雜點：小於 <input type="number" id="o_speckle" value="8" min="0"> 格的拿掉</label></div>
+      <div class="row"><label><input type="checkbox" id="o_split" checked> 一張圖有多隻時切開</label></div>
+      <div class="row"><label>相距 <input type="number" id="o_gap" value="1" min="0" max="6"> 格內算同一隻</label></div>
+      <div class="row"><label><input type="checkbox" id="o_flipAll"> 全部左右翻轉</label></div>
+      <div class="row"><label>尺寸統一 <select id="o_sizeMode"><option value="off">關</option><option value="shape">比對身形（推薦）</option><option value="height">只看高度</option></select></label></div>
+      <div class="row" id="r_sizeTo"><label>統一成 <select id="o_sizeTo"><option value="median">中位數（改動最少）</option><option value="first">第 1 格的大小</option><option value="max">最大的那格（只放大，不會掉細節）</option></select></label></div>
+      <div class="row"><label><input type="checkbox" id="o_quantize" checked> 統一調色盤</label> <label><input type="number" id="o_k" value="12" min="2" max="18"> 色</label></div>
+      <div class="row"><label><input type="checkbox" id="o_legsOnly"> 只換腿（上半身用第 1 格）</label></div>
+      <div class="row"><label>上下分界 <input type="range" id="o_split_at" min="40" max="85" value="62"> <span id="splitv">62</span>%</label></div>
+      <div class="row"><label>水平對齊 <select id="o_align"><option value="torso">軀幹比對（走路推薦）</option><option value="shape">身形比對（全身動作推薦）</option><option value="mass">上半身重心</option><option value="center">整體中心</option><option value="left">靠左（不對齊）</option></select></label></div>
+      <p class="hint">腳底一律貼齊地面。改了設定會自動重新處理。</p>
+    </section>
+    <section>
+      <h2>處理紀錄</h2>
+      <div id="log">還沒有圖。</div>
+    </section>
+  </aside>
+
+  <div class="center">
+    <div id="stageWrap"><canvas id="stage" width="10" height="10"></canvas></div>
+    <div class="row" style="padding:6px 12px 0;background:var(--panel);border-top:1px solid var(--line);margin:0">
+      <label>放大 <input type="range" id="zoom" min="2" max="14" value="6"></label>
+      <label>背景 <select id="bgc"><option value="checker">棋盤格</option><option value="#3a4e63">桌面藍</option><option value="#151413">深色</option><option value="#f4f1ec">淺色</option><option value="#ff00ff">洋紅</option></select></label>
+      <label><input type="checkbox" id="onion"> 洋蔥皮（疊上一格）</label>
+      <label><input type="checkbox" id="guides" checked> 地面線／中線</label>
+      <span class="hint">選一格後用 <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> 微調位置</span>
+    </div>
+    <div class="strip" id="strip"></div>
+  </div>
+
+  <aside class="right">
+    <section>
+      <h2>3. 順暢度診斷</h2>
+      <div class="row"><label>動作類型 <select id="kind"><option value="walk">只有腳在動（走路）</option><option value="body">全身在動（抖毛、追尾巴）</option></select></label></div>
+      <div id="verdict" class="verdict lv0">—</div>
+      <div class="row" style="margin-top:8px"><button id="auto" class="primary">✨ 自動找最佳設定</button></div>
+      <div id="autoLog" class="hint"></div>
+    </section>
+    <section>
+      <h2>建議</h2>
+      <ul class="tips" id="tips"><li class="hint">處理完會在這裡給建議。</li></ul>
+    </section>
+    <section>
+      <h2>相鄰兩格比較（點一列看差異圖）</h2>
+      <table id="table"></table>
+      <p class="hint">頭部／身體／腳：該部位的重心移動幾格。變化：兩格輪廓不重疊的比例。色差：兩格各顏色所佔比例的差異（毛色、光影畫得不一樣）。大小：比對身形量出的大小差。<br>灰色的欄位不列入評分：走路的腳本來就會動；抖毛、追尾巴的頭和身體本來就會動。</p>
+    </section>
+    <section>
+      <h2>差異圖</h2>
+      <canvas id="diff" width="10" height="10"></canvas>
+      <div class="hint legend"><span style="background:#e0604c"></span>只在前一格<span style="background:#4c9be0"></span>只在後一格<span style="background:#6d6560"></span>兩格都有</div>
+    </section>
+    <section>
+      <h2>4. 套用到品種</h2>
+      <div class="row"><label>品種 <select id="sv_breed"></select></label> <label>姿勢 <select id="sv_pose"></select></label></div>
+      <div class="row"><label>大小 <select id="sv_scale"><option value="same">跟原本的同名姿勢一樣高（沒有就跟站姿）</option><option value="stand">跟站姿一樣高</option><option value="none">不縮放</option><option value="custom">自訂倍率</option></select></label></div>
+      <div class="row" id="r_factor"><label>倍率 <input type="number" id="sv_factor" value="1" step="0.05" min="0.3" max="3"></label></div>
+      <div class="hint" id="sv_info"></div>
+      <div class="row" style="margin-top:6px"><button id="save">💾 存進 sprites</button></div>
+      <div class="hint" id="sv_log" style="white-space:pre-wrap"></div>
+    </section>
+  </aside>
+</main>
+<footer>
+  <span><kbd>空白鍵</kbd> 播放／暫停</span><span><kbd>,</kbd> <kbd>.</kbd> 上一格／下一格</span><span><kbd>←→↑↓</kbd> 微調選取的格子（<kbd>Shift</kbd> 一次 5 格）</span><span id="status"></span>
+</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+let sources = [];            // {path} 或 {name, data}
+let res = null;              // 伺服器處理結果
+let order = [], enabled = [], nudge = [], flips = new Set();
+let canv = [];               // 每格上好色的小畫布
+let sel = 0, playing = true, cur = 0, lastStep = 0, cmpPair = null;
+
+// ── 選圖 ──────────────────────────────────
+fetch('/api/images').then(r => r.json()).then(list => {
+  for (const p of list) $('picker').add(new Option(p, p));
+});
+$('addPick').onclick = () => {
+  for (const o of $('picker').selectedOptions) sources.push({ path: o.value });
+  srcChanged();
+};
+$('clearSrc').onclick = () => { sources = []; srcChanged(); };
+$('drop').onclick = () => $('file').click();
+$('file').onchange = e => addFiles(e.target.files);
+for (const ev of ['dragenter', 'dragover']) $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.add('over'); });
+for (const ev of ['dragleave', 'drop']) $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.remove('over'); });
+$('drop').addEventListener('drop', e => addFiles(e.dataTransfer.files));
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => { e.preventDefault(); if (e.target !== $('drop')) addFiles(e.dataTransfer.files); });
+
+async function addFiles(files) {
+  for (const f of [...files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))) {
+    if (!f.type.startsWith('image/')) continue;
+    const data = await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(f); });
+    sources.push({ name: f.name, data });
+  }
+  srcChanged();
+}
+
+function srcChanged() {
+  const box = $('srcs'); box.innerHTML = '';
+  sources.forEach((s, i) => {
+    const d = document.createElement('div'); d.className = 'src';
+    d.innerHTML = `<span title="${s.path || s.name}">${i + 1}. ${s.path || s.name}</span>`;
+    const mk = (t, fn) => { const b = document.createElement('button'); b.textContent = t; b.onclick = fn; d.append(b); };
+    mk('▲', () => { if (i) { [sources[i - 1], sources[i]] = [sources[i], sources[i - 1]]; srcChanged(); } });
+    mk('▼', () => { if (i < sources.length - 1) { [sources[i + 1], sources[i]] = [sources[i], sources[i + 1]]; srcChanged(); } });
+    mk('✕', () => { sources.splice(i, 1); srcChanged(); });
+    box.append(d);
+  });
+  flips.clear();
+  run(true);
+}
+
+// ── 前處理設定 ─────────────────────────────
+const OPT_IDS = ['grid', 'cell', 'shrink', 'bg', 'tol', 'speckle', 'split', 'gap', 'flipAll', 'sizeMode', 'sizeTo', 'quantize', 'k', 'legsOnly', 'split_at', 'align'];
+function options() {
+  const o = {};
+  for (const id of OPT_IDS) {
+    const el = $('o_' + id);
+    o[id] = el.type === 'checkbox' ? el.checked : el.type === 'number' || el.type === 'range' ? +el.value : el.value;
+  }
+  o.split_at /= 100;
+  o.flip = [...flips];
+  return o;
+}
+function syncOptUI() {
+  const g = $('o_grid').value;
+  $('r_cell').style.display = g === 'manual' ? '' : 'none';
+  $('r_shrink').style.display = g === 'off' ? '' : 'none';
+  $('r_tol').style.display = $('o_bg').value === 'corner' ? '' : 'none';
+  $('r_sizeTo').style.display = $('o_sizeMode').value === 'off' ? 'none' : '';
+  $('tolv').textContent = $('o_tol').value; $('splitv').textContent = $('o_split_at').value;
+}
+let timer;
+for (const id of OPT_IDS) $('o_' + id).addEventListener('change', () => { syncOptUI(); clearTimeout(timer); timer = setTimeout(() => run(false), 250); });
+$('o_tol').addEventListener('input', syncOptUI); $('o_split_at').addEventListener('input', syncOptUI);
+syncOptUI();
+$('run').onclick = () => run(false);
+
+let reqId = 0;
+async function run(reset) {
+  if (!sources.length) { res = null; canv = []; order = []; render(); $('log').textContent = '還沒有圖。'; return; }
+  const id = ++reqId;
+  $('busy').style.display = 'inline'; $('run').disabled = true;
+  try {
+    const r = await fetch('/api/process', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sources, options: options() }) });
+    const j = await r.json();
+    if (id !== reqId) return;
+    if (j.error) { $('log').textContent = '⚠ ' + j.error; return; }
+    const n = j.frames.length;
+    if (reset || !res || res.frames.length !== n) {
+      order = [...Array(n).keys()]; enabled = Array(n).fill(true); nudge = Array.from({ length: n }, () => ({ dx: 0, dy: 0 })); sel = 0; cur = 0;
+    }
+    res = j;
+    canv = j.frames.map(f => frameCanvas(f, j.palette));
+    $('log').textContent = j.log.join('\n') +
+      (n && j.frames[0].rel === undefined ? '\n⚠ 伺服器是舊版（算不出「大小」）：關掉執行動畫檢查器的黑色視窗，再重新雙擊「啟動動畫檢查器.bat」' : '');
+    cmpPair = null;
+    render();
+  } catch (e) {
+    if (id === reqId) $('log').textContent = '⚠ ' + e;
+  } finally {
+    if (id === reqId) { $('busy').style.display = 'none'; $('run').disabled = false; }
+  }
+}
+
+function rgbOf(hex) { const v = parseInt(hex.slice(1), 16); return [v >> 16 & 255, v >> 8 & 255, v & 255]; }
+function frameCanvas(f, pal) {
+  const c = document.createElement('canvas'); c.width = f.w; c.height = f.h;
+  const ctx = c.getContext('2d'), img = ctx.createImageData(f.w, f.h);
+  f.rows.forEach((row, y) => [...row].forEach((ch, x) => {
+    if (ch === '.') return;
+    const [r, g, b] = rgbOf(pal[ch] || '#ff00ff'), k = (y * f.w + x) * 4;
+    img.data[k] = r; img.data[k + 1] = g; img.data[k + 2] = b; img.data[k + 3] = 255;
+  }));
+  ctx.putImageData(img, 0, 0);
+  return c;
+}
+
+// ── 排版：每格的錨點對到中線、腳底貼地面 ──────────
+function seq() { return order.filter(i => enabled[i]); }
+function playSeq() {
+  const s = seq();
+  return $('mode').value === 'pingpong' && s.length > 2 ? s.concat(s.slice(1, -1).reverse()) : s;
+}
+function layout(R = res, s = seq(), nud = nudge) {
+  const place = {};
+  let x0 = 0, x1 = 1, y0 = -1;
+  for (const i of s) {
+    const f = R.frames[i], p = { x: Math.round(-f.ax + nud[i].dx), y: -f.h + nud[i].dy };
+    place[i] = p;
+    x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x + f.w); y0 = Math.min(y0, p.y);
+  }
+  const pad = 4;
+  return { s, place, minX: x0 - pad, minY: y0 - pad, W: x1 - x0 + pad * 2, H: -y0 + pad * 2 + Math.max(0, ...s.map(i => nud[i].dy)) };
+}
+
+function paintBg(ctx, w, h, z) {
+  const b = $('bgc').value;
+  if (b === 'checker') {
+    for (let y = 0; y < h; y += 8) for (let x = 0; x < w; x += 8) { ctx.fillStyle = ((x + y) / 8) % 2 ? '#3a3532' : '#4a4440'; ctx.fillRect(x, y, 8, 8); }
+  } else { ctx.fillStyle = b; ctx.fillRect(0, 0, w, h); }
+}
+
+function render() {
+  renderStrip(); renderDiag(); draw(true);
+}
+
+function draw(force) {
+  const st = $('stage'), ctx = st.getContext('2d');
+  if (!res || !seq().length) { st.width = st.height = 10; return; }
+  const L = layout(), z = +$('zoom').value, ps = playSeq();
+  if (st.width !== L.W * z || st.height !== L.H * z) { st.width = L.W * z; st.height = L.H * z; }
+  ctx.imageSmoothingEnabled = false;
+  paintBg(ctx, st.width, st.height, z);
+  const i = ps[cur % ps.length];
+  if ($('onion').checked && ps.length > 1) {
+    const pi = ps[(cur - 1 + ps.length) % ps.length];
+    ctx.globalAlpha = .3; blit(ctx, pi, L, z); ctx.globalAlpha = 1;
+  }
+  blit(ctx, i, L, z);
+  if ($('guides').checked) {
+    ctx.fillStyle = 'rgba(95,179,107,.8)'; ctx.fillRect(0, (0 - L.minY) * z, st.width, 2);
+    ctx.fillStyle = 'rgba(224,138,60,.6)';
+    for (let y = 0; y < st.height; y += 8) ctx.fillRect((0 - L.minX) * z, y, 1, 4);
+  }
+  document.querySelectorAll('.card').forEach(c => c.classList.toggle('cur', +c.dataset.i === i));
+  $('status').textContent = `第 ${seq().indexOf(i) + 1} / ${seq().length} 格：${res.frames[i].label}（${res.frames[i].w}×${res.frames[i].h}）`;
+}
+function blit(ctx, i, L, z) {
+  const p = L.place[i], f = res.frames[i];
+  ctx.drawImage(canv[i], (p.x - L.minX) * z, (p.y - L.minY) * z, f.w * z, f.h * z);
+}
+
+function tick(t) {
+  const ms = +$('ms').value;
+  if (playing && res && t - lastStep >= ms) { lastStep = t; cur = (cur + 1) % Math.max(1, playSeq().length); draw(); }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+$('play').onclick = () => { playing = !playing; $('play').textContent = playing ? '⏸ 暫停' : '▶ 播放'; $('play').classList.toggle('on', playing); };
+$('prev').onclick = () => { playing && $('play').click(); cur = (cur - 1 + playSeq().length) % Math.max(1, playSeq().length); draw(); };
+$('next').onclick = () => { playing && $('play').click(); cur = (cur + 1) % Math.max(1, playSeq().length); draw(); };
+$('ms').oninput = () => $('msv').textContent = $('ms').value;
+for (const id of ['zoom', 'bgc', 'onion', 'guides']) $(id).addEventListener('input', () => draw());
+$('mode').onchange = () => { cur = 0; renderDiag(); draw(); };
+
+// ── 底下的格子列 ───────────────────────────
+function renderStrip() {
+  const box = $('strip'); box.innerHTML = '';
+  if (!res) { box.innerHTML = '<span class="hint" style="padding:10px">選好圖之後，每一格會列在這裡：可以停用、換順序、翻轉、微調位置。</span>'; return; }
+  order.forEach((i, pos) => {
+    const f = res.frames[i], card = document.createElement('div');
+    card.className = 'card' + (i === sel ? ' sel' : '') + (enabled[i] ? '' : ' off'); card.dataset.i = i;
+    const c = document.createElement('canvas'), s = Math.max(1, Math.floor(Math.min(110 / f.w, 80 / f.h)));
+    c.width = f.w * s; c.height = f.h * s;
+    const cx = c.getContext('2d'); cx.imageSmoothingEnabled = false; cx.drawImage(canv[i], 0, 0, c.width, c.height);
+    const lbl = document.createElement('div'); lbl.className = 'lbl'; lbl.textContent = `${pos + 1}. ${f.label}`; lbl.title = f.label;
+    const info = document.createElement('div'); info.className = 'lbl';
+    info.textContent = `${f.w}×${f.h}` + (nudge[i].dx || nudge[i].dy ? `　偏移 ${nudge[i].dx},${nudge[i].dy}` : '');
+    const btns = document.createElement('div'); btns.className = 'btns';
+    const mk = (t, title, fn) => { const b = document.createElement('button'); b.textContent = t; b.title = title; b.onclick = e => { e.stopPropagation(); fn(); }; btns.append(b); };
+    mk(enabled[i] ? '✓' : '○', '這一格要不要用', () => { enabled[i] = !enabled[i]; cur = 0; render(); });
+    mk('◀', '往前移', () => { if (pos) { [order[pos - 1], order[pos]] = [order[pos], order[pos - 1]]; render(); } });
+    mk('▶', '往後移', () => { if (pos < order.length - 1) { [order[pos + 1], order[pos]] = [order[pos], order[pos + 1]]; render(); } });
+    mk('↔', '左右翻轉這一格（會重新處理）', () => { flips.has(i) ? flips.delete(i) : flips.add(i); run(false); });
+    mk('⟲', '清除位置微調', () => { nudge[i] = { dx: 0, dy: 0 }; render(); });
+    card.append(c, lbl, info, btns);
+    card.onclick = () => { sel = i; cmpPair = null; render(); };
+    box.append(card);
+  });
+}
+
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.key === ' ') { e.preventDefault(); $('play').click(); return; }
+  if (e.key === ',') return $('prev').click();
+  if (e.key === '.') return $('next').click();
+  const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+  if (d && res) {
+    e.preventDefault();
+    const k = e.shiftKey ? 5 : 1;
+    nudge[sel].dx += d[0] * k; nudge[sel].dy += d[1] * k;
+    render();
+  }
+});
+
+// ── 診斷 ─────────────────────────────────
+function masks(L, R = res) {
+  const out = {};
+  for (const i of L.s) {
+    const f = R.frames[i], p = L.place[i], m = new Int32Array(L.W * L.H).fill(-1), hist = {};
+    let hx = 0, hy = 0, hn = 0, bx = 0, by = 0, bn = 0, fx = 0, fy = 0, fn = 0;
+    f.rows.forEach((row, y) => [...row].forEach((ch, x) => {
+      if (ch === '.') return;
+      const X = x + p.x - L.minX, Y = y + p.y - L.minY;
+      m[Y * L.W + X] = 1;
+      hist[ch] = (hist[ch] || 0) + 1;
+      bx += X; by += Y; bn++;
+      if (y < f.h * .35) { hx += X; hy += Y; hn++; }
+      if (y >= f.h * .8) { fx += X; fy += Y; fn++; }
+    }));
+    for (const ch in hist) hist[ch] /= bn;
+    out[i] = { m, hist, head: [hx / hn, hy / hn], body: [bx / bn, by / bn], feet: [fx / fn, fy / fn] };
+  }
+  return out;
+}
+const dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+function compare(a, b, M, R) {
+  const A = M[a], B = M[b];
+  let uni = 0, xor = 0;
+  for (let k = 0; k < A.m.length; k++) {
+    const x = A.m[k], y = B.m[k];
+    if (x < 0 && y < 0) continue;
+    uni++;
+    if (x < 0 || y < 0) xor++;   // 一格有、一格沒有
+  }
+  // 色差：比較兩格各顏色所佔的比例（跟位置無關），毛色或光影畫得不一樣時才會變大
+  let cd = 0;
+  for (const ch of new Set([...Object.keys(A.hist), ...Object.keys(B.hist)])) cd += Math.abs((A.hist[ch] || 0) - (B.hist[ch] || 0));
+  return {
+    a, b,
+    head: dist(A.head, B.head), body: dist(A.body, B.body), feet: dist(A.feet, B.feet),
+    change: uni ? xor / uni : 0,
+    color: cd / 2,
+    // 伺服器比對身形量出的大小差（不會被抬腳、轉頭騙到）；舊版伺服器沒有 rel，當成 0
+    size: R.frames[a].rel && R.frames[b].rel ? Math.abs(R.frames[a].rel / R.frames[b].rel - 1) : 0,
+  };
+}
+const LIMITS = { head: [2.5, 5], body: [1.5, 3], feet: [1.5, 3], change: [.3, .5], color: [.12, .22], size: [.04, .08] };
+const lv = (k, v) => v >= LIMITS[k][1] ? 2 : v >= LIMITS[k][0] ? 1 : 0;
+// 依動作類型決定哪些數字要算：走路的腳本來就會動、全身動作的頭和身體本來就會動
+const METRICS = { walk: ['head', 'body', 'size', 'color', 'change'], body: ['feet', 'size', 'color', 'change'] };
+const WEIGHT = { change: .5 };
+
+function pairsOf(R, s, nud, loop) {
+  const L = layout(R, s, nud), M = masks(L, R), pairs = [];
+  for (let k = 0; k < s.length - 1; k++) pairs.push(compare(s[k], s[k + 1], M, R));
+  if (loop && s.length > 2) pairs.push(compare(s[s.length - 1], s[0], M, R));
+  return { L, M, pairs };
+}
+/** 卡頓分數：每一對相鄰格、每個要算的數字除以「有點跳」的門檻，加總。越低越順。 */
+function score(pairs, kind) {
+  let t = 0;
+  for (const p of pairs) for (const k of METRICS[kind]) t += (WEIGHT[k] || 1) * p[k] / LIMITS[k][0];
+  return t / Math.max(1, pairs.length);
+}
+
+function renderDiag() {
+  const tbl = $('table'), tips = $('tips'), vd = $('verdict');
+  if (!res || seq().length < 2) {
+    tbl.innerHTML = ''; vd.className = 'verdict lv0'; vd.textContent = res ? '至少要 2 格才能檢查' : '—';
+    tips.innerHTML = '<li class="hint">處理完會在這裡給建議。</li>'; drawDiff(null); return;
+  }
+  const kind = $('kind').value, use = METRICS[kind];
+  const { L, M, pairs } = pairsOf(res, seq(), nudge, $('mode').value === 'loop'), s = L.s;
+  const pos = i => s.indexOf(i) + 1;
+  const COLS = [['head', '頭部', v => v.toFixed(1)], ['body', '身體', v => v.toFixed(1)], ['feet', '腳', v => v.toFixed(1)],
+                ['change', '變化', v => Math.round(v * 100) + '%'], ['color', '色差', v => Math.round(v * 100) + '%'], ['size', '大小', v => Math.round(v * 100) + '%']];
+  const cell = (k, v, fmt) => `<td class="${use.includes(k) ? 'lv' + lv(k, v) : 'hint'}">${fmt(v)}</td>`;
+  tbl.innerHTML = '<tr><th>相鄰</th>' + COLS.map(c => `<th>${c[1]}</th>`).join('') + '</tr>' +
+    pairs.map((p, k) => `<tr class="click" data-k="${k}"><td>${pos(p.a)}→${pos(p.b)}</td>` + COLS.map(c => cell(c[0], p[c[0]], c[2])).join('') + '</tr>').join('');
+  tbl.querySelectorAll('tr.click').forEach(tr => tr.onclick = () => { cmpPair = pairs[+tr.dataset.k]; drawDiff(cmpPair, L, M); });
+
+  const worst = k => use.includes(k) ? Math.max(...pairs.map(p => lv(k, p[k]))) : 0;
+  const w = Math.max(...use.map(k => k === 'change' ? Math.min(1, worst(k)) : worst(k)));
+  vd.className = 'verdict lv' + w;
+  vd.textContent = ['✅ 看起來很順', '⚠ 有點跳，看一下建議', '❌ 會明顯卡頓'][w] + `（卡頓分數 ${score(pairs, kind).toFixed(1)}）`;
+
+  const o = options(), t = [];
+  if (worst('size')) t.push(o.sizeMode === 'off' ? '狗狗忽大忽小：「尺寸統一」選「比對身形」' :
+    o.sizeMode === 'height' ? '還是忽大忽小：「只看高度」會被抬腳、轉頭騙到，改選「比對身形」' : '大小還是不一致：可能有一格畫得特別大／小，停用它或重生那一格');
+  if (worst('head')) t.push(o.legsOnly ? '頭還在跳：調整「上下分界」，讓分界線落在腿和身體交界' : '頭的位置每格不同：走路只有腳該動，勾「只換腿」');
+  if (worst('body')) t.push(o.align !== 'torso' ? '整隻在左右滑：水平對齊改成「軀幹比對」' : '整隻還在滑：點那一格，用方向鍵手動微調');
+  if (worst('feet')) t.push(o.align !== 'shape' ? '腳在滑動：水平對齊改成「身形比對」' : '腳還在滑：點那一格，用方向鍵手動微調，讓腳踩在同一個位置');
+  if (worst('color')) t.push(o.quantize ? '顏色差很多：可能有一格的毛色或光影畫得不一樣，建議重生那一格' : '顏色在閃：勾「統一調色盤」');
+  if (worst('change') === 2) t.push('有兩格輪廓差太多（超過一半不重疊）：可能順序錯了、或中間少一格；看差異圖找出是哪兩格');
+  if (w) t.unshift('不知道從哪裡改起：按「✨ 自動找最佳設定」');
+  if (o.split && sources.length === 1 && seq().length !== 4) t.push(`這張圖切出 ${seq().length} 格；走路和抖毛應該是 4 格，數量不對時調整「相距幾格算同一隻」或「去雜點」`);
+  if (!t.length) t.push('沒有發現問題。用不同速度多看幾次，確認動作本身自然。');
+  tips.innerHTML = t.map(x => `<li>${x}</li>`).join('');
+
+  const k = cmpPair ? pairs.findIndex(p => p.a === cmpPair.a && p.b === cmpPair.b) : -1;
+  const sk = pairs.findIndex(p => p.a === sel);
+  cmpPair = pairs[k >= 0 ? k : sk >= 0 ? sk : 0];
+  drawDiff(cmpPair, L, M);
+}
+
+function drawDiff(p, L, M) {
+  const c = $('diff'), ctx = c.getContext('2d');
+  if (!p) { c.width = c.height = 10; return; }
+  const z = Math.max(1, Math.floor(316 / L.W));
+  c.width = L.W * z; c.height = L.H * z;
+  const img = ctx.createImageData(L.W, L.H), A = M[p.a].m, B = M[p.b].m;
+  for (let k = 0; k < A.length; k++) {
+    const col = A[k] > 0 && B[k] > 0 ? [109, 101, 96] : A[k] > 0 ? [224, 96, 76] : B[k] > 0 ? [76, 155, 224] : null;
+    if (!col) continue;
+    img.data.set([...col, 255], k * 4);
+  }
+  const tmp = document.createElement('canvas'); tmp.width = L.W; tmp.height = L.H; tmp.getContext('2d').putImageData(img, 0, 0);
+  ctx.imageSmoothingEnabled = false; ctx.drawImage(tmp, 0, 0, c.width, c.height);
+  $('table').querySelectorAll('tr.click').forEach(tr => tr.style.background = '');
+}
+
+$('kind').onchange = () => renderDiag();
+
+// ── 自動找最佳設定：把常用的組合都試一遍，挑卡頓分數最低的 ──────────
+$('auto').onclick = async () => {
+  if (!res || seq().length < 2) return;
+  const kind = $('kind').value, loop = $('mode').value === 'loop', s = seq();
+  const zero = res.frames.map(() => ({ dx: 0, dy: 0 }));
+  const combos = [];
+  for (const sizeMode of ['off', 'shape'])
+    for (const align of kind === 'walk' ? ['torso', 'shape', 'mass'] : ['shape', 'torso', 'center'])
+      for (const legsOnly of kind === 'walk' ? [false, true] : [false])
+        combos.push({ sizeMode, sizeTo: 'median', align, legsOnly, quantize: true });
+  const before = score(pairsOf(res, s, nudge, loop).pairs, kind);
+  let best = null;
+  $('auto').disabled = true;
+  try {
+    for (let n = 0; n < combos.length; n++) {
+      $('autoLog').textContent = `試第 ${n + 1} / ${combos.length} 種組合…`;
+      const o = { ...options(), ...combos[n] };
+      const j = await (await fetch('/api/process', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sources, options: o }) })).json();
+      if (j.error || j.frames.length !== res.frames.length) continue;
+      const sc = score(pairsOf(j, s, zero, loop).pairs, kind);
+      if (!best || sc < best.sc) best = { sc, c: combos[n] };
+    }
+  } finally { $('auto').disabled = false; }
+  if (!best) { $('autoLog').textContent = '⚠ 沒有可用的組合'; return; }
+  const c = best.c;
+  $('o_sizeMode').value = c.sizeMode; $('o_sizeTo').value = c.sizeTo; $('o_align').value = c.align;
+  $('o_legsOnly').checked = c.legsOnly; $('o_quantize').checked = c.quantize;
+  nudge = res.frames.map(() => ({ dx: 0, dy: 0 }));
+  syncOptUI();
+  const name = { off: '關', shape: '比對身形', height: '只看高度' }[c.sizeMode] + '、' + $('o_align').selectedOptions[0].text.replace(/（.*）/, '') + (c.legsOnly ? '、只換腿' : '');
+  $('autoLog').textContent = `試了 ${combos.length} 種組合，卡頓分數 ${before.toFixed(1)} → ${best.sc.toFixed(1)}，已套用：${name}` +
+    (best.sc > METRICS[kind].length - .5 ? '\n分數還是偏高：多半是圖本身畫得不一致，看建議決定要不要重生某一格。' : '');
+  await run(false);
+};
+
+// ── 套用到品種 ─────────────────────────────
+const POSE_NAMES = { stand: '站姿', walk: '走路', sit: '坐', sleep: '睡覺', eat: '吃飯', poop: '便便', stretch: '伸懶腰',
+  sniff: '聞地板（新）', chase: '追尾巴（新）', dizzy: '頭暈（新）', pant: '喘氣（新）', shake: '抖毛（新）', sidesleep: '側躺睡（新）' };
+let breeds = [];
+async function loadBreeds() {
+  breeds = await (await fetch('/api/breeds')).json();
+  const cur = $('sv_breed').value;
+  $('sv_breed').innerHTML = breeds.map(b => `<option value="${b.id}">${b.name}（${b.id}）</option>`).join('');
+  if (cur) $('sv_breed').value = cur;
+  svInfo();
+}
+$('sv_pose').innerHTML = Object.entries(POSE_NAMES).map(([k, v]) => `<option value="${k}">${v}　${k}</option>`).join('');
+function svInfo() {
+  const b = breeds.find(x => x.id === $('sv_breed').value), p = b && b.poses[$('sv_pose').value];
+  $('r_factor').style.display = $('sv_scale').value === 'custom' ? '' : 'none';
+  $('sv_info').textContent = !b ? '' : p ? `已經有這個姿勢：${p.frames} 格、${p.w}×${p.h}，存檔會覆蓋（git 可以還原）` : '這個品種還沒有這個姿勢，會新增';
+}
+for (const id of ['sv_breed', 'sv_pose', 'sv_scale']) $(id).onchange = svInfo;
+loadBreeds();
+
+$('save').onclick = async () => {
+  if (!res || !seq().length) return;
+  const breed = $('sv_breed').value, pose = $('sv_pose').value, b = breeds.find(x => x.id === breed);
+  if (b.poses[pose] && !confirm(`要覆蓋 sprites/${breed}/${pose}.json 嗎？\n（原本 ${b.poses[pose].frames} 格、${b.poses[pose].w}×${b.poses[pose].h}）`)) return;
+  const frames = seq().map(i => ({ rows: res.frames[i].rows, ax: res.frames[i].ax, dx: nudge[i].dx, dy: nudge[i].dy }));
+  const body = { breed, pose, frames, palette: res.palette, scale: $('sv_scale').value, factor: +$('sv_factor').value };
+  $('save').disabled = true;
+  try {
+    const j = await (await fetch('/api/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
+    $('sv_log').textContent = j.error ? '⚠ ' + j.error : j.message;
+  } finally { $('save').disabled = false; }
+  loadBreeds();
+};
+
+// ── 匯出 ─────────────────────────────────
+function renderFrames(z) {
+  const L = layout();
+  return playSeq().map(i => {
+    const c = document.createElement('canvas'); c.width = L.W * z; c.height = L.H * z;
+    const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
+    const b = $('bgc').value; ctx.fillStyle = b === 'checker' ? '#3a4e63' : b; ctx.fillRect(0, 0, c.width, c.height);
+    blit(ctx, i, L, z);
+    return c;
+  });
+}
+function download(url, name) { const a = document.createElement('a'); a.href = url; a.download = name; a.click(); }
+$('gif').onclick = async () => {
+  if (!res) return;
+  const fr = renderFrames(Math.min(+$('zoom').value, 6)).map(c => c.toDataURL('image/png'));
+  const r = await fetch('/api/gif', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ frames: fr, ms: +$('ms').value }) });
+  const j = await r.json();
+  if (j.gif) download(j.gif, 'animation.gif'); else alert(j.error);
+};
+$('png').onclick = () => {
+  if (!res) return;
+  const fr = renderFrames(Math.min(+$('zoom').value, 6)), c = document.createElement('canvas');
+  c.width = fr.reduce((s, f) => s + f.width, 0); c.height = fr[0].height;
+  let x = 0; for (const f of fr) { c.getContext('2d').drawImage(f, x, 0); x += f.width; }
+  download(c.toDataURL('image/png'), 'frames.png');
+};
+
+renderStrip();
+</script>
+</body>
+</html>
